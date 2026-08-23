@@ -80,10 +80,31 @@ fuck_bug(){
 # ⚠️ prune(删掉目标里多余的文件)只能用于 MC2 独占的目录。
 #    /koolshare/bin、/koolshare/scripts、/koolshare/res、/koolshare/webs 是**所有插件共用**的,
 #    在那里 prune 会删掉别的插件的文件,直接把系统搞坏。
+# 目录指纹:把源目录的「文件名 + 内容」压成一个 md5。
+# 源在 /tmp(tmpfs=内存),读它几乎不要钱;而逐文件 cmp 要去读 U 盘上的目标。
+# 真机实测 13MB 的 dashboard:指纹 0.07 秒,逐文件比对 0.66 秒(还是热缓存下),
+# 安装时冷读 U 盘更是 4 秒。指纹一致就整个目录跳过 —— 连目标盘都不用碰。
+dir_fp(){ (cd "$1" 2>/dev/null && find . -type f | sort | xargs md5sum 2>/dev/null | md5sum | cut -d' ' -f1); }
+
 sync_smart(){
 	SRC="$1"; DST="$2"; PRUNE="$3"
 	[ -d "$SRC" ] || return 0
 	mkdir -p "$DST" 2>/dev/null
+	# ── 快路:只对 MC2 独占的目录(带 prune 的)启用 ────────────────────────
+	# 指纹记的是「上次装进去的是哪一版内容」。共用目录(/koolshare/bin 等)里还有
+	# 别的插件的文件,文件数对不上,快路本来也不成立,所以只在 prune 目录上用。
+	# 除了指纹,还比一次文件数(只读目录元数据,不读内容):万一有人手工删了目标里的
+	# 文件,指纹还是旧的,靠文件数这一关兜住,不会漏装。
+	CS_FP=""
+	if [ "$PRUNE" = "prune" ]; then
+		CS_FPF="/koolshare/merlinclash/.fp_$(basename "$SRC")"
+		CS_FP="$(dir_fp "$SRC")"
+		if [ -n "$CS_FP" ] && [ "$CS_FP" = "$(cat "$CS_FPF" 2>/dev/null)" ] \
+			&& [ "$(find "$SRC" -type f | wc -l)" -eq "$(find "$DST" -type f 2>/dev/null | wc -l)" ]; then
+			echo_date "  $(basename "$SRC"): 指纹一致,整个目录跳过(未读写 U 盘)"
+			return 0
+		fi
+	fi
 	CS_W=0; CS_S=0; CS_D=0
 	CS_OIFS="$IFS"; IFS='
 '
@@ -107,6 +128,7 @@ sync_smart(){
 		done
 	fi
 	IFS="$CS_OIFS"
+	[ -n "$CS_FP" ] && echo "$CS_FP" > "$CS_FPF" 2>/dev/null
 	if [ "$CS_D" -gt 0 ]; then
 		echo_date "  $(basename "$SRC"): 写入 $CS_W,跳过 $CS_S(未变化),清除 $CS_D(已废弃)"
 	else
