@@ -22,14 +22,17 @@ return JSON.stringify(o,null,1);})()
 合格线:每个 tab 的 `lbl` 只有 **一个值 232**,`left` 只有 **一个值**,`scrollW` **不超过 innerWidth**。
 改之前是 `lbl:"236,248"`(错位 12px)、`left:"796,808"`。
 
-**② 行分隔线是否是一条直线**
+**② 行分隔线只有一条(且画在 `<tr>` 上)**
 ```js
-[].slice.call(document.querySelectorAll('.FormTable > tbody > tr')).map(function(tr){
-var th=tr.querySelector('th'),td=tr.querySelector('td');if(!th||!td||!tr.offsetParent)return null;
-return Math.round(td.getBoundingClientRect().bottom-th.getBoundingClientRect().bottom);}).filter(function(x){return x!==null;})
+(function(){var rows=[].slice.call(document.querySelectorAll('.FormTable > tbody > tr'))
+.filter(function(tr){return tr.offsetParent&&tr.children.length===2;});
+return JSON.stringify({tr:getComputedStyle(rows[0]).borderBottomWidth,
+cellsClean:rows.every(function(x){return getComputedStyle(x.querySelector('th')).borderBottomWidth==='0px'
+&&getComputedStyle(x.querySelector('td')).borderBottomWidth==='0px';})});})()
 ```
-全 0 才合格。分隔线画在 `<tr>` 上就恒为 0;画在 th/td 上时曾经是 **13~347px**——
-两列高度不同,同一条分隔线被画在两个 y 上。
+合格线:`tr:"1px"` 且 `cellsClean:true`。**别去比 th 和 td 的 bottom** ——
+flex 下两列本来就不等高(实测差 12~347px),那是正常的;正因为不等高,
+线才必须画在行上。曾经把线画在 th/td 上,同一条分隔线被画成两截、错开一大段。
 
 **③ 写死像素导致的留白**
 ```js
