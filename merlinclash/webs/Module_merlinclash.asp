@@ -56,6 +56,8 @@
 
 			// 初始化函数
 			function init() {
+				// MC2-merlin:页面加载后静默检查更新(不弹窗,只在状态栏提示)
+				setTimeout(function(){ try { mc_selfupdate("check"); } catch(e){} }, 3000);
 				show_menu(menu_hook);
 				// 初始化获取Dbus值
 				get_dbus_data();
@@ -488,6 +490,49 @@
 			}
 		})
 		return pushData;
+	}
+	/* ===== MC2-merlin 自更新(wawnnzxd/MC2-merlin)===== */
+	function mc_selfupdate(action){
+		var msg = E("mc_selfupdate_msg"), btn = E("mc_selfupdate_btn");
+		if (action == "install" && !confirm("将下载并安装新版本:期间 mihomo 会重启(约 1 分钟断网),装完自动恢复。继续?")) return;
+		if (action == "check") msg.innerHTML = "检查中...";
+		if (action == "install") msg.innerHTML = "下载中...";
+		mc_selfupdate_api(action, function(r){
+			if (r.indexOf("new:") == 0) {
+				var v = r.substring(4);
+				msg.innerHTML = "<span style='color:#ff9900'>发现新版本 <b>" + v + "</b></span>";
+				btn.innerHTML = "<i style='color:#ff9900'>立即更新</i>";
+				btn.setAttribute("onclick", "mc_selfupdate('install')");
+			} else if (r.indexOf("latest:") == 0) {
+				msg.innerHTML = "<span style='color:#5ce58a'>已是最新 " + r.substring(7) + "</span>";
+			} else if (r.indexOf("installing:") == 0) {
+				btn.setAttribute("onclick", "");
+				mc_selfupdate_poll(0);
+			} else {
+				msg.innerHTML = "<span style='color:#ff3358'>" + (action == "check" ? "检查失败" : "更新失败") + ":" + (r || "无响应") + "</span>";
+			}
+		}, function(){ msg.innerHTML = "<span style='color:#ff3358'>请求失败</span>"; });
+	}
+	// 安装进度轮询:installing → restarting → done | failed(后端 clash_selfupdate.sh status 回传 dbus 状态)
+	function mc_selfupdate_poll(n){
+		var msg = E("mc_selfupdate_msg");
+		if (n > 60) { msg.innerHTML = "<span style='color:#ff3358'>等待超时,请看日志后手动刷新</span>"; return; }
+		mc_selfupdate_api("status", function(r){
+			if (r.indexOf("installing:") == 0) msg.innerHTML = "<span style='color:#ff9900'>正在安装 " + r.substring(11) + " ...</span>";
+			else if (r.indexOf("restarting:") == 0) msg.innerHTML = "<span style='color:#ff9900'>文件已更新,正在重启内核 ...</span>";
+			else if (r.indexOf("done:") == 0) { msg.innerHTML = "<span style='color:#5ce58a'>已更新到 " + r.substring(5) + ",3 秒后刷新页面</span>"; setTimeout(function(){ location.reload(); }, 3000); return; }
+			else if (r.indexOf("failed:") == 0) { msg.innerHTML = "<span style='color:#ff3358'>更新失败:" + r.substring(7) + "</span>"; return; }
+			setTimeout(function(){ mc_selfupdate_poll(n + 1); }, 5000);
+		}, function(){ setTimeout(function(){ mc_selfupdate_poll(n + 1); }, 5000); });
+	}
+	function mc_selfupdate_api(action, ok, fail){
+		var id = parseInt(Math.random() * 100000000);
+		$.ajax({
+			type: "POST", cache: false, url: "/_api/", dataType: "json", timeout: 60000,
+			data: JSON.stringify({"id": id, "method": "clash_selfupdate.sh", "params": [action], "fields": {}}),
+			success: function(resp){ ok((resp && typeof resp.result === "string") ? resp.result : ""); },
+			error: function(){ fail(); }
+		});
 	}
 	//push_data方法。调用实时日志显示
 	function push_data(script, arg, obj, flag){
@@ -2695,6 +2740,11 @@ function getACLConfigs(db_acl) {
 																		</div>
 																	</div>
 																</label>
+															</div>
+															<!-- MC2-merlin 自更新:查自己的 GitHub Release -->
+															<div id="mc_selfupdate_bar" style="display:table-cell;float:left;position:absolute;margin-left:290px;padding:5.5px 0px;">
+																<a class="hintstyle" id="mc_selfupdate_btn" href="javascript:void(0)" onclick="mc_selfupdate('check')" style="cursor:pointer"><i>检查更新</i></a>
+																<span id="mc_selfupdate_msg" style="margin-left:8px"></span>
 															</div>
 															<div id="merlinclash_version_show" style="display:table-cell;float: left;position: absolute;margin-left:70px;padding: 5.5px 0px;">
 																<a class="hintstyle">

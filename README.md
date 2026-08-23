@@ -54,3 +54,30 @@ gh release create vx.y.z.n packages/MC2_x.y.z.n_ARM64.tar.gz --title "MC2 x.y.z.
 - routing-mark `524288 → 256`(已确认与本机 fullcone 的 `0x2333` 不冲突)
 - 9 个规则文件更新(GoogleCN / GoogleFCM / UnBan / rule_mc*)
 - CSS 上游未动(与我们的 `.orig` 备份逐字节相同)⇒ 皮肤补丁零冲突
+
+## 自更新(v1.2.2.2 起)
+
+插件页面「订阅配置」标签栏右侧有 **检查更新** 按钮,页面打开 3 秒后也会自动查一次
+`https://api.github.com/repos/wawnnzxd/MC2-merlin/releases/latest`:
+
+- 有新版 → 显示版本号,按钮变「立即更新」→ 点一下:下载 Release 里的 tar.gz → 校验 → 跑 install.sh →
+  **自动恢复总开关 + 重启内核**(原版 install.sh 会把 `merlinclash_enable` 置 0,我们装完自己拉回来)→ 页面自动刷新。
+- 后端 `scripts/clash_selfupdate.sh <id> check|install|status`;进度写在 dbus `merlinclash_selfupdate_*`,
+  日志 `/tmp/upload/merlinclash_selfupdate.log`。
+- **GEO 文件不会丢**:install.sh 对已存在且 >1MB 的 GeoSite/GeoIP.dat 一律「略过」。
+- 仓库必须是公开的(private 的 API 需 token:`dbus set merlinclash_selfupdate_token=<PAT>`,不推荐)。
+
+### 发版流程(给下次吸收上游新版用)
+1. 上游 MC2 新包解包到 `merlinclash/`,重新套 `patches/01~04`(冲突手工合)
+2. `merlinclash/version` 改成 **四段纯数字**(如 `1.2.3.1`,install.sh 会剥字母后整数比较,带字母的版本号会坏)
+3. 打包 + 发 Release(tag 必须 `v` + 版本号,资产必须是 `.tar.gz`):
+```bash
+COPYFILE_DISABLE=1 tar --no-xattrs -czf packages/MC2_x.y.z.n_ARM64.tar.gz merlinclash
+gh release create vx.y.z.n packages/MC2_x.y.z.n_ARM64.tar.gz --title "MC2 x.y.z.n" --notes "…"
+```
+4. 路由器上打开插件页 → 自动提示新版 → 立即更新。
+
+### 踩过的坑
+- `/_api/` 的 `method` **必须带 `.sh`**(`clash_selfupdate.sh`),写成 `clash_selfupdate` httpd 找不到脚本、前端只看到失败。
+- `versioncmp A B` 在 **A 比 B 新时输出 `-1`**(反直觉),判新版用 `= "-1"`。
+- 手动起内核是 `clash_config.sh restart restart`(动作在 **第 2 个参数**,`case $2 in`),只给一个参数什么都不干。
