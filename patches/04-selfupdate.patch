@@ -1,5 +1,5 @@
 diff --git a/merlinclash/webs/Module_merlinclash.asp b/merlinclash/webs/Module_merlinclash.asp
-index c35f81f..5debba7 100755
+index c35f81f..44de0ae 100755
 --- a/merlinclash/webs/Module_merlinclash.asp
 +++ b/merlinclash/webs/Module_merlinclash.asp
 @@ -56,6 +56,8 @@
@@ -11,7 +11,7 @@ index c35f81f..5debba7 100755
  				show_menu(menu_hook);
  				// 初始化获取Dbus值
  				get_dbus_data();
-@@ -489,6 +491,49 @@
+@@ -489,6 +491,54 @@
  		})
  		return pushData;
  	}
@@ -33,7 +33,9 @@ index c35f81f..5debba7 100755
 +				btn.setAttribute("onclick", "");
 +				mc_selfupdate_poll(0);
 +			} else {
-+				msg.innerHTML = "<span style='color:#ff3358'>" + (action == "check" ? "检查失败" : "更新失败") + ":" + (r || "无响应") + "</span>";
++				msg.innerHTML = r == "__auth__"
++					? "<span style='color:#ff9900'>登录已过期,请重新登录路由器后再试</span>"
++					: "<span style='color:#ff3358'>" + (action == "check" ? "检查失败" : "更新失败") + ":" + (r || "无响应") + "</span>";
 +			}
 +		}, function(){ msg.innerHTML = "<span style='color:#ff3358'>请求失败</span>"; });
 +	}
@@ -42,10 +44,12 @@ index c35f81f..5debba7 100755
 +		var msg = E("mc_selfupdate_msg");
 +		if (n > 60) { msg.innerHTML = "<span style='color:#ff3358'>等待超时,请看日志后手动刷新</span>"; return; }
 +		mc_selfupdate_api("status", function(r){
-+			if (r.indexOf("installing:") == 0) msg.innerHTML = "<span style='color:#ff9900'>正在安装 " + r.substring(11) + " ...</span>";
++			if (r.indexOf("downloading:") == 0) msg.innerHTML = "<span style='color:#ff9900'>正在下载 " + r.substring(12) + " (约 20MB)...</span>";
++			else if (r.indexOf("installing:") == 0) msg.innerHTML = "<span style='color:#ff9900'>正在安装 " + r.substring(11) + " ...</span>";
 +			else if (r.indexOf("restarting:") == 0) msg.innerHTML = "<span style='color:#ff9900'>文件已更新,正在重启内核 ...</span>";
 +			else if (r.indexOf("done:") == 0) { msg.innerHTML = "<span style='color:#5ce58a'>已更新到 " + r.substring(5) + ",3 秒后刷新页面</span>"; setTimeout(function(){ location.reload(); }, 3000); return; }
 +			else if (r.indexOf("failed:") == 0) { msg.innerHTML = "<span style='color:#ff3358'>更新失败:" + r.substring(7) + "</span>"; return; }
++			else if (r == "__auth__") { msg.innerHTML = "<span style='color:#ff9900'>登录已过期,更新仍在后台进行 —— 重新登录后刷新本页查看结果</span>"; return; }
 +			setTimeout(function(){ mc_selfupdate_poll(n + 1); }, 5000);
 +		}, function(){ setTimeout(function(){ mc_selfupdate_poll(n + 1); }, 5000); });
 +	}
@@ -54,14 +58,15 @@ index c35f81f..5debba7 100755
 +		$.ajax({
 +			type: "POST", cache: false, url: "/_api/", dataType: "json", timeout: 60000,
 +			data: JSON.stringify({"id": id, "method": "clash_selfupdate.sh", "params": [action], "fields": {}}),
-+			success: function(resp){ ok((resp && typeof resp.result === "string") ? resp.result : ""); },
++			// result 为数字(如 -403)= httpd session 过期,不是脚本失败;交给调用方按 "__auth__" 处理
++			success: function(resp){ ok((resp && typeof resp.result === "string") ? resp.result : (resp && resp.result === -403 ? "__auth__" : "")); },
 +			error: function(){ fail(); }
 +		});
 +	}
  	//push_data方法。调用实时日志显示
  	function push_data(script, arg, obj, flag){
  		if (!flag) showMCLoadingBar();
-@@ -2696,6 +2741,11 @@ function getACLConfigs(db_acl) {
+@@ -2696,6 +2746,11 @@ function getACLConfigs(db_acl) {
  																	</div>
  																</label>
  															</div>
@@ -75,10 +80,10 @@ index c35f81f..5debba7 100755
  																	<i>当前版本：</i>
 diff --git a/merlinclash/scripts/clash_selfupdate.sh b/merlinclash/scripts/clash_selfupdate.sh
 new file mode 100755
-index 0000000..8f2ecf4
+index 0000000..8612756
 --- /dev/null
 +++ b/merlinclash/scripts/clash_selfupdate.sh
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,122 @@
 +#!/bin/sh
 +# clash_selfupdate.sh —— MC2-merlin 自更新:查 GitHub Release → 对比版本 → 一键安装
 +#
@@ -143,32 +148,34 @@ index 0000000..8f2ecf4
 +	;;
 +install)
 +	echo_date "开始自更新..." > $LOG
-+	R=$(fetch_latest) || { echo_date "❌ 获取 Release 失败" >> $LOG; http_response "error"; exit 0; }
++	R=$(fetch_latest) || { echo_date "❌ 获取 Release 失败" >> $LOG; dbus set merlinclash_selfupdate_status="failed:无法访问 api.github.com"; http_response "error"; exit 0; }
 +	TAG=$(echo "$R" | cut -f1); DL=$(echo "$R" | cut -f2); ASSET_API=$(echo "$R" | cut -f3)
 +	LATEST="${TAG#v}"
-+	echo_date "目标版本 $LATEST,下载中..." >> $LOG
-+	rm -f /tmp/mc_update.tar.gz
-+	if [ -n "$TOKEN" ] && [ -n "$ASSET_API" ]; then
-+		curl -sL -m 300 -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" -o /tmp/mc_update.tar.gz "$ASSET_API"
-+	else
-+		curl -sL -m 300 -o /tmp/mc_update.tar.gz "$DL"
-+	fi
-+	SZ=$(wc -c < /tmp/mc_update.tar.gz 2>/dev/null || echo 0)
-+	if [ "$SZ" -lt 1000000 ]; then
-+		echo_date "❌ 下载失败或文件异常($SZ 字节)" >> $LOG; http_response "error"; exit 0
-+	fi
-+	if ! tar -tzf /tmp/mc_update.tar.gz >/dev/null 2>&1; then
-+		echo_date "❌ 压缩包损坏" >> $LOG; rm -f /tmp/mc_update.tar.gz; http_response "error"; exit 0
-+	fi
-+	echo_date "下载完成($((SZ/1024/1024))MB),校验通过,开始安装..." >> $LOG
 +	WAS_ON="$(dbus get merlinclash_enable)"
-+	dbus set merlinclash_selfupdate_status="installing:$LATEST"
++	dbus set merlinclash_selfupdate_status="downloading:$LATEST"
++	# ★ 立即返回,不在前台等 20MB 下载(前台等会让 /_api/ ajax 超时,页面误报"更新失败")。
++	#   下载→校验→install.sh→恢复开关重启内核 全部塞进后台子 shell;页面轮询 status 看进度。
 +	http_response "installing:$LATEST"
-+	# 交给原版 install.sh(它会 clash_config.sh stop stop → stop_config 把 merlinclash_enable 置 0 → 复制文件 → 建软链)。
-+	# 后台跑、脱离本请求;装完后若原本是开着的,自动恢复开关并重启内核(两个参数 restart restart,见 HANDOFF 坑表)。
-+	# 子 shell 体在 fork 前已整体解析完,install.sh 随后覆盖本脚本文件也不影响它。
 +	(
 +		trap '' HUP
++		echo_date "目标版本 $LATEST,下载中..." >> $LOG
++		rm -f /tmp/mc_update.tar.gz
++		if [ -n "$TOKEN" ] && [ -n "$ASSET_API" ]; then
++			curl -sL -m 300 -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" -o /tmp/mc_update.tar.gz "$ASSET_API"
++		else
++			curl -sL -m 300 -o /tmp/mc_update.tar.gz "$DL"
++		fi
++		SZ=$(wc -c < /tmp/mc_update.tar.gz 2>/dev/null || echo 0)
++		if [ "$SZ" -lt 1000000 ]; then
++			echo_date "❌ 下载失败或文件异常($SZ 字节)" >> $LOG
++			dbus set merlinclash_selfupdate_status="failed:下载失败($SZ 字节)"; exit 0
++		fi
++		if ! tar -tzf /tmp/mc_update.tar.gz >/dev/null 2>&1; then
++			echo_date "❌ 压缩包损坏" >> $LOG; rm -f /tmp/mc_update.tar.gz
++			dbus set merlinclash_selfupdate_status="failed:压缩包损坏"; exit 0
++		fi
++		echo_date "下载完成($((SZ/1024/1024))MB),校验通过,开始安装..." >> $LOG
++		dbus set merlinclash_selfupdate_status="installing:$LATEST"
 +		rm -rf /tmp/merlinclash && cd /tmp && tar -xzf /tmp/mc_update.tar.gz && sh /tmp/merlinclash/install.sh >> $LOG 2>&1
 +		rc=$?
 +		NOW="$(cat /koolshare/merlinclash/version 2>/dev/null | tr -d ' \r\n')"

@@ -509,7 +509,9 @@
 				btn.setAttribute("onclick", "");
 				mc_selfupdate_poll(0);
 			} else {
-				msg.innerHTML = "<span style='color:#ff3358'>" + (action == "check" ? "检查失败" : "更新失败") + ":" + (r || "无响应") + "</span>";
+				msg.innerHTML = r == "__auth__"
+					? "<span style='color:#ff9900'>登录已过期,请重新登录路由器后再试</span>"
+					: "<span style='color:#ff3358'>" + (action == "check" ? "检查失败" : "更新失败") + ":" + (r || "无响应") + "</span>";
 			}
 		}, function(){ msg.innerHTML = "<span style='color:#ff3358'>请求失败</span>"; });
 	}
@@ -518,10 +520,12 @@
 		var msg = E("mc_selfupdate_msg");
 		if (n > 60) { msg.innerHTML = "<span style='color:#ff3358'>等待超时,请看日志后手动刷新</span>"; return; }
 		mc_selfupdate_api("status", function(r){
-			if (r.indexOf("installing:") == 0) msg.innerHTML = "<span style='color:#ff9900'>正在安装 " + r.substring(11) + " ...</span>";
+			if (r.indexOf("downloading:") == 0) msg.innerHTML = "<span style='color:#ff9900'>正在下载 " + r.substring(12) + " (约 20MB)...</span>";
+			else if (r.indexOf("installing:") == 0) msg.innerHTML = "<span style='color:#ff9900'>正在安装 " + r.substring(11) + " ...</span>";
 			else if (r.indexOf("restarting:") == 0) msg.innerHTML = "<span style='color:#ff9900'>文件已更新,正在重启内核 ...</span>";
 			else if (r.indexOf("done:") == 0) { msg.innerHTML = "<span style='color:#5ce58a'>已更新到 " + r.substring(5) + ",3 秒后刷新页面</span>"; setTimeout(function(){ location.reload(); }, 3000); return; }
 			else if (r.indexOf("failed:") == 0) { msg.innerHTML = "<span style='color:#ff3358'>更新失败:" + r.substring(7) + "</span>"; return; }
+			else if (r == "__auth__") { msg.innerHTML = "<span style='color:#ff9900'>登录已过期,更新仍在后台进行 —— 重新登录后刷新本页查看结果</span>"; return; }
 			setTimeout(function(){ mc_selfupdate_poll(n + 1); }, 5000);
 		}, function(){ setTimeout(function(){ mc_selfupdate_poll(n + 1); }, 5000); });
 	}
@@ -530,7 +534,8 @@
 		$.ajax({
 			type: "POST", cache: false, url: "/_api/", dataType: "json", timeout: 60000,
 			data: JSON.stringify({"id": id, "method": "clash_selfupdate.sh", "params": [action], "fields": {}}),
-			success: function(resp){ ok((resp && typeof resp.result === "string") ? resp.result : ""); },
+			// result 为数字(如 -403)= httpd session 过期,不是脚本失败;交给调用方按 "__auth__" 处理
+			success: function(resp){ ok((resp && typeof resp.result === "string") ? resp.result : (resp && resp.result === -403 ? "__auth__" : "")); },
 			error: function(){ fail(); }
 		});
 	}

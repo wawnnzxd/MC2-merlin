@@ -62,32 +62,34 @@ check)
 	;;
 install)
 	echo_date "开始自更新..." > $LOG
-	R=$(fetch_latest) || { echo_date "❌ 获取 Release 失败" >> $LOG; http_response "error"; exit 0; }
+	R=$(fetch_latest) || { echo_date "❌ 获取 Release 失败" >> $LOG; dbus set merlinclash_selfupdate_status="failed:无法访问 api.github.com"; http_response "error"; exit 0; }
 	TAG=$(echo "$R" | cut -f1); DL=$(echo "$R" | cut -f2); ASSET_API=$(echo "$R" | cut -f3)
 	LATEST="${TAG#v}"
-	echo_date "目标版本 $LATEST,下载中..." >> $LOG
-	rm -f /tmp/mc_update.tar.gz
-	if [ -n "$TOKEN" ] && [ -n "$ASSET_API" ]; then
-		curl -sL -m 300 -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" -o /tmp/mc_update.tar.gz "$ASSET_API"
-	else
-		curl -sL -m 300 -o /tmp/mc_update.tar.gz "$DL"
-	fi
-	SZ=$(wc -c < /tmp/mc_update.tar.gz 2>/dev/null || echo 0)
-	if [ "$SZ" -lt 1000000 ]; then
-		echo_date "❌ 下载失败或文件异常($SZ 字节)" >> $LOG; http_response "error"; exit 0
-	fi
-	if ! tar -tzf /tmp/mc_update.tar.gz >/dev/null 2>&1; then
-		echo_date "❌ 压缩包损坏" >> $LOG; rm -f /tmp/mc_update.tar.gz; http_response "error"; exit 0
-	fi
-	echo_date "下载完成($((SZ/1024/1024))MB),校验通过,开始安装..." >> $LOG
 	WAS_ON="$(dbus get merlinclash_enable)"
-	dbus set merlinclash_selfupdate_status="installing:$LATEST"
+	dbus set merlinclash_selfupdate_status="downloading:$LATEST"
+	# ★ 立即返回,不在前台等 20MB 下载(前台等会让 /_api/ ajax 超时,页面误报"更新失败")。
+	#   下载→校验→install.sh→恢复开关重启内核 全部塞进后台子 shell;页面轮询 status 看进度。
 	http_response "installing:$LATEST"
-	# 交给原版 install.sh(它会 clash_config.sh stop stop → stop_config 把 merlinclash_enable 置 0 → 复制文件 → 建软链)。
-	# 后台跑、脱离本请求;装完后若原本是开着的,自动恢复开关并重启内核(两个参数 restart restart,见 HANDOFF 坑表)。
-	# 子 shell 体在 fork 前已整体解析完,install.sh 随后覆盖本脚本文件也不影响它。
 	(
 		trap '' HUP
+		echo_date "目标版本 $LATEST,下载中..." >> $LOG
+		rm -f /tmp/mc_update.tar.gz
+		if [ -n "$TOKEN" ] && [ -n "$ASSET_API" ]; then
+			curl -sL -m 300 -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" -o /tmp/mc_update.tar.gz "$ASSET_API"
+		else
+			curl -sL -m 300 -o /tmp/mc_update.tar.gz "$DL"
+		fi
+		SZ=$(wc -c < /tmp/mc_update.tar.gz 2>/dev/null || echo 0)
+		if [ "$SZ" -lt 1000000 ]; then
+			echo_date "❌ 下载失败或文件异常($SZ 字节)" >> $LOG
+			dbus set merlinclash_selfupdate_status="failed:下载失败($SZ 字节)"; exit 0
+		fi
+		if ! tar -tzf /tmp/mc_update.tar.gz >/dev/null 2>&1; then
+			echo_date "❌ 压缩包损坏" >> $LOG; rm -f /tmp/mc_update.tar.gz
+			dbus set merlinclash_selfupdate_status="failed:压缩包损坏"; exit 0
+		fi
+		echo_date "下载完成($((SZ/1024/1024))MB),校验通过,开始安装..." >> $LOG
+		dbus set merlinclash_selfupdate_status="installing:$LATEST"
 		rm -rf /tmp/merlinclash && cd /tmp && tar -xzf /tmp/mc_update.tar.gz && sh /tmp/merlinclash/install.sh >> $LOG 2>&1
 		rc=$?
 		NOW="$(cat /koolshare/merlinclash/version 2>/dev/null | tr -d ' \r\n')"
