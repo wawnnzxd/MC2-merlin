@@ -46,6 +46,17 @@ set_status(){ dbus set merlinclash_selfupdate_status="$(sane "$1")"; }
 
 cur_ver(){ cat /koolshare/merlinclash/version 2>/dev/null | tr -d ' \r\n'; }
 
+# ⚠️ busybox 的 find **只有 `-mtime DAYS`,没有 `-mmin`**(实测 `find --help` 里只列了
+#    -mtime)。用 -mmin 写的新鲜度判断是哑弹:不报错,只是永远匹配不到,于是缓存永远
+#    不命中、锁永远不过期。所以时间一律自己写进文件里比,只依赖 date +%s。
+#    age_ok <文件> <秒数> —— 文件第一个字段是 epoch,且距今不超过 N 秒
+age_ok(){
+	[ -f "$1" ] || return 1
+	AO_T="$(cut -d' ' -f1 "$1" 2>/dev/null)"
+	case "$AO_T" in ''|*[!0-9]*) return 1 ;; esac
+	[ $(( $(date +%s) - AO_T )) -lt "$2" ]
+}
+
 # 装完/失败都要走这里。/tmp 是 tmpfs(占内存),解包出来的 /tmp/merlinclash 实测 27MB,
 # 不删就一直占着 2GB 内存里的 27MB 直到重启 —— 这正是"bug 造成的资源占用"。
 cleanup_tmp(){ rm -rf /tmp/mc_update.tar.gz /tmp/merlinclash >/dev/null 2>&1; }
@@ -83,8 +94,8 @@ case "$ACTION" in
 check|autocheck)
 	# autocheck 来自页面自动触发:缓存还新鲜就直接用,不打 GitHub。
 	# check 来自用户点按钮:永远查实时的 —— 用户点了就是想知道现在的情况。
-	if [ "$ACTION" = "autocheck" ] && [ -n "$(find /tmp -maxdepth 1 -name mc_lastcheck -mmin -${CACHE_MIN} 2>/dev/null)" ]; then
-		CACHED="$(cat $CACHE 2>/dev/null)"
+	if [ "$ACTION" = "autocheck" ] && age_ok "$CACHE" $((CACHE_MIN * 60)); then
+		CACHED="$(cut -d' ' -f2- "$CACHE" 2>/dev/null)"
 		if [ -n "$CACHED" ]; then http_response "$CACHED"; exit 0; fi
 	fi
 	echo_date "检查 $REPO 最新版本..." > $CHKLOG
@@ -104,30 +115,34 @@ check|autocheck)
 	if [ "$CMP" = "-1" ]; then
 		[ "$BUSY" = "0" ] && set_status "new"
 		echo_date "发现新版本 $LATEST(当前 $CUR)" >> $CHKLOG
-		echo "new:$LATEST" > $CACHE
+		echo "$(date +%s) new:$LATEST" > $CACHE
 		http_response "new:$LATEST"
 	else
 		[ "$BUSY" = "0" ] && set_status "latest"
 		echo_date "已是最新($CUR)" >> $CHKLOG
-		echo "latest:$CUR" > $CACHE
+		echo "$(date +%s) latest:$CUR" > $CACHE
 		http_response "latest:$CUR"
 	fi
 	;;
 install)
 	# 互斥:mkdir 是原子的。刷新页面会让「立即更新」按钮重新可点,不加锁就可能有
 	# 两路安装共用 /tmp/mc_update.tar.gz 和 /tmp/merlinclash 互相拆台。
-	# 锁超过 15 分钟视为上一轮崩了(子 shell 被 kill 就不会 rmdir),强行接管。
+	# 锁超过 15 分钟视为上一轮崩了(子 shell 被 kill 就不会释放),强行接管。
 	# 没有这个兜底,一次异常就会让「立即更新」永久点不动,直到重启清空 /tmp。
-	[ -n "$(find /tmp -maxdepth 1 -name mc_selfupdate.lock -mmin +15 2>/dev/null)" ] && rmdir "$LOCK" 2>/dev/null
+	# 只在「时间戳存在且已过期」时接管。刚 mkdir 完还没来得及写 ts 的那一瞬间不能抢,
+	# 否则两路会同时拿到锁。反过来说,若真有进程在这几微秒里崩了,锁会留到重启
+	# (/tmp 是 tmpfs,重启即清)—— 两害相权取这个。
+	if [ -f "$LOCK/ts" ] && ! age_ok "$LOCK/ts" 900; then rm -rf "$LOCK" 2>/dev/null; fi
 	if ! mkdir "$LOCK" 2>/dev/null; then
 		# 已经有一路在装:把真实进度回给前端,让它直接接着轮询,别显示 "already"
 		http_response "$(dbus get merlinclash_selfupdate_status)"
 		exit 0
 	fi
+	date +%s > "$LOCK/ts"
 	echo_date "开始自更新..." > $LOG
 	R=$(fetch_latest) || {
 		echo_date "❌ 获取 Release 失败" >> $LOG
-		set_status "failed:github-unreachable"; rmdir "$LOCK" 2>/dev/null
+		set_status "failed:github-unreachable"; rm -rf "$LOCK" 2>/dev/null
 		http_response "error:无法访问 api.github.com"; exit 0; }
 	TAG=$(echo "$R" | cut -f1); DL=$(echo "$R" | cut -f2); ASSET_API=$(echo "$R" | cut -f3)
 	LATEST="$(sane "${TAG#v}")"
@@ -154,7 +169,7 @@ install)
 		GOT="$(cat /tmp/merlinclash/version 2>/dev/null | tr -d ' \r\n')"
 		if [ "$rc" != "0" ] || [ ! -f /tmp/merlinclash/install.sh ] || [ "$GOT" != "$LATEST" ]; then
 			echo_date "❌ 下载或解包失败(tar rc=$rc,解出版本 '$GOT',期望 '$LATEST')" >> $LOG
-			set_status "failed:fetch-rc$rc"; cleanup_tmp; rmdir "$LOCK" 2>/dev/null; exit 0
+			set_status "failed:fetch-rc$rc"; cleanup_tmp; rm -rf "$LOCK" 2>/dev/null; exit 0
 		fi
 		echo_date "解包完成($(du -sk /tmp/merlinclash | cut -f1)KB),开始安装..." >> $LOG
 		set_status "installing:$LATEST"
@@ -184,7 +199,7 @@ install)
 			set_status "failed:install-rc$rc-now$NOW"
 		fi
 		cleanup_tmp
-		rmdir "$LOCK" 2>/dev/null
+		rm -rf "$LOCK" 2>/dev/null
 	) &
 	;;
 status)
