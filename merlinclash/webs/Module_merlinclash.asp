@@ -57,7 +57,7 @@
 			// 初始化函数
 			function init() {
 				// MC2-merlin:页面加载后静默检查更新(不弹窗,只在状态栏提示)
-				setTimeout(function(){ try { mc_selfupdate("check"); } catch(e){} }, 3000);
+				setTimeout(function(){ try { mc_selfupdate("autocheck"); } catch(e){} }, 3000);   // autocheck: 30 分钟内复用缓存,别每开一次页面就烧一次 GitHub 配额
 				show_menu(menu_hook);
 				// 初始化获取Dbus值
 				get_dbus_data();
@@ -522,7 +522,7 @@
 	function mc_selfupdate(action){
 		var msg = E("mc_selfupdate_msg"), btn = E("mc_selfupdate_btn");
 		if (action == "install" && !confirm("将下载并安装新版本:期间 mihomo 会重启(约 1 分钟断网),装完自动恢复。继续?")) return;
-		if (action == "check") msg.innerHTML = "检查中...";
+		if (action == "check" || action == "autocheck") msg.innerHTML = "检查中...";
 		if (action == "install") msg.innerHTML = "下载中...";
 		mc_selfupdate_api(action, function(r){
 			if (r.indexOf("new:") == 0) {
@@ -543,7 +543,7 @@
 				mc_su_say("#ff3358", "检查失败:" + mc_esc(r.substring(6)));
 				mc_su_rearm();
 			} else {
-				mc_su_say("#ff3358", (action == "check" ? "检查失败" : "更新失败") + ":" + mc_esc(r || "无响应"));
+				mc_su_say("#ff3358", (action.indexOf("check") >= 0 ? "检查失败" : "更新失败") + ":" + mc_esc(r || "无响应"));
 				mc_su_rearm();
 			}
 		}, function(){ mc_su_say("#ff3358", "请求失败"); mc_su_rearm(); });

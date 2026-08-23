@@ -7,7 +7,8 @@
 #   本脚本让插件页面自己检查自己的仓库,有新版就提示,点一下直接装。
 #
 # 用法(由前端经 /_api/ 调用,$1=请求ID 由 base.sh 接住,动作在 $2):
-#   clash_selfupdate.sh <id> check     → 回传 new:<版本> / latest:<版本> / error:<原因>
+#   clash_selfupdate.sh <id> check     → 强制查一次(用户点按钮),回传 new:/latest:/error:
+#   clash_selfupdate.sh <id> autocheck → 同上,但 30 分钟内复用缓存(页面自动检查用)
 #   clash_selfupdate.sh <id> install   → 下载 → 校验 → install.sh → 恢复开关 + 重启内核
 #   clash_selfupdate.sh <id> status    → 回传 merlinclash_selfupdate_status(页面轮询进度)
 #
@@ -32,6 +33,11 @@ API="https://api.github.com/repos/$REPO/releases/latest"
 LOG=/tmp/upload/merlinclash_selfupdate.log        # 安装日志:失败时用户唯一的线索,只许追加
 CHKLOG=/tmp/upload/merlinclash_selfcheck.log      # 检查日志:每次开页面都会重写,不能和上面共用
 LOCK=/tmp/mc_selfupdate.lock
+# 页面每次打开 3 秒后都会自动检查一次。GitHub 未认证 API 是 60 次/小时/IP,
+# 家里几个人各开几次页面就可能被限流(限流返回 403,脚本会误报成"连不上")。
+# 缓存放 /tmp(tmpfs):既省 API 配额,又不像 dbus 那样每次都写 NAND。
+CACHE=/tmp/mc_lastcheck
+CACHE_MIN=30
 ACTION="$2"
 
 # 版本号/标签只允许这些字符。任何要进 dbus 或进 shell 展开的外部字符串都过这里。
@@ -75,7 +81,13 @@ fetch_latest(){
 }
 
 case "$ACTION" in
-check)
+check|autocheck)
+	# autocheck 来自页面自动触发:缓存还新鲜就直接用,不打 GitHub。
+	# check 来自用户点按钮:永远查实时的 —— 用户点了就是想知道现在的情况。
+	if [ "$ACTION" = "autocheck" ] && [ -n "$(find /tmp -maxdepth 1 -name mc_lastcheck -mmin -${CACHE_MIN} 2>/dev/null)" ]; then
+		CACHED="$(cat $CACHE 2>/dev/null)"
+		if [ -n "$CACHED" ]; then http_response "$CACHED"; exit 0; fi
+	fi
 	echo_date "检查 $REPO 最新版本..." > $CHKLOG
 	R=$(fetch_latest) || { set_status "error:github-unreachable"; http_response "error:无法访问 api.github.com(代理未起?)"; exit 0; }
 	TAG=$(echo "$R" | cut -f1)
@@ -93,10 +105,12 @@ check)
 	if [ "$CMP" = "-1" ]; then
 		[ "$BUSY" = "0" ] && set_status "new"
 		echo_date "发现新版本 $LATEST(当前 $CUR)" >> $CHKLOG
+		echo "new:$LATEST" > $CACHE
 		http_response "new:$LATEST"
 	else
 		[ "$BUSY" = "0" ] && set_status "latest"
 		echo_date "已是最新($CUR)" >> $CHKLOG
+		echo "latest:$CUR" > $CACHE
 		http_response "latest:$CUR"
 	fi
 	;;
@@ -157,6 +171,7 @@ install)
 				sh /koolshare/scripts/clash_config.sh restart restart >/dev/null 2>&1
 			fi
 			set_status "done:$LATEST"
+			rm -f $CACHE
 			echo_date "✅ 自更新完成:$LATEST" >> $LOG
 		else
 			# install.sh 已经跑过 `clash_config.sh stop stop`,里面 stop_config() 会把
@@ -179,7 +194,7 @@ status)
 	http_response "$(dbus get merlinclash_selfupdate_status)"
 	;;
 *)
-	http_response "usage: check|install|status"
+	http_response "usage: check|autocheck|install|status"
 	;;
 esac
 exit 0
