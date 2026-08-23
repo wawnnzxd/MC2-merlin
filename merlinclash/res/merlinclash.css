@@ -8,7 +8,16 @@
    Note: #rrggbbaa hex = color + alpha (e.g. #ffffff17 ≈ white @ 9%).
    ============================================================================ */
 
-/* ---- 1. Design tokens -------------------------------------------------- */
+/* ---- 1. Design tokens --------------------------------------------------
+   Everything visual in this sheet resolves to a token here. Three rules the
+   rest of the file obeys without exception:
+     · every spacing number is a multiple of 4;
+     · every radius comes from the concentric scale (frame → card → control →
+       chip), so nested corners stay visually parallel instead of random;
+     · every transition names its properties and uses one of the two curves —
+       never `all`, never `ease-in` (ease-in delays the first frame, the exact
+       moment the eye is on the element, and reads as lag).
+   ------------------------------------------------------------------------ */
 #app {
 	--mc-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Roboto, Arial, sans-serif;
 	--mc-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -19,9 +28,15 @@
 	--mc-surface-2: #26323a;
 	--mc-surface-hi: #2d3a43;
 	--mc-inset: #10171c;
+	/* Translucent material. ONLY the outermost frame uses it: a light
+	   translucent surface stacked on another destroys legibility, so the inner
+	   cards stay near-opaque and read as solid objects sitting on the glass. */
+	--mc-glass: #131a1fd6;
+	--mc-glass-blur: 30px;
 	--mc-border: #ffffff17;
 	--mc-border-soft: #ffffff0e;
 	--mc-border-hi: #ffffff29;
+	--mc-specular: #ffffff21;        /* top edge-light — the material catching a highlight */
 	/* text */
 	--mc-text: #e9eef1;
 	--mc-text-dim: #a4b5bd;
@@ -30,18 +45,34 @@
 	--mc-amber: #ffce5c;
 	--mc-cyan: #58e6d8;
 	--mc-green: #5ce58a;
-	/* shape & depth */
-	--mc-r: 14px;
-	--mc-r-sm: 9px;
-	--mc-r-xs: 6px;
+	--mc-red: #ff6b81;
+	/* Concentric radii — each nested level steps down so corners stay parallel.
+	   frame 22 → card 16 → control 11 → chip 8. */
+	--mc-r-frame: 22px;
+	--mc-r-card: 16px;
+	--mc-r-ctl: 11px;
+	--mc-r-chip: 8px;
 	--mc-pill: 999px;
-	--mc-edge: inset 0 1px 0 #ffffff0a;                      /* top edge-light */
+	--mc-r: var(--mc-r-frame);       /* aliases: older rules below still say --mc-r/-sm/-xs */
+	--mc-r-sm: var(--mc-r-ctl);
+	--mc-r-xs: var(--mc-r-chip);
+	/* depth */
+	--mc-edge: inset 0 1px 0 var(--mc-specular);
 	--mc-shadow-1: 0 1px 2px #00000059, 0 6px 18px #00000042;
 	--mc-shadow-2: 0 2px 6px #00000066, 0 14px 36px #00000057;
 	--mc-shadow-pop: 0 24px 70px #00000099, 0 6px 18px #00000073;
-	/* motion */
-	--mc-ease: cubic-bezier(.4, 0, .2, 1);
-	--mc-dur: .18s;
+	/* motion — the built-in CSS easings are too weak to read as intentional */
+	--mc-ease: cubic-bezier(.23, 1, .32, 1);        /* strong ease-out: enter, exit, feedback */
+	--mc-ease-move: cubic-bezier(.77, 0, .175, 1);  /* strong ease-in-out: on-screen movement */
+	--mc-dur-press: .13s;            /* press feedback — must beat perception  */
+	--mc-dur: .2s;                   /* default UI                             */
+	--mc-dur-lg: .26s;               /* larger surfaces (popups, sheets)       */
+	/* layout grid — one number per concept, used by every row on the page */
+	--mc-gutter: 20px;               /* cell side padding                      */
+	--mc-row-y: 12px;                /* cell vertical padding                  */
+	--mc-label-w: 232px;             /* THE label column width (see §5b)       */
+	--mc-gap: 12px;                  /* default gap between siblings           */
+	--mc-frame-max: 1240px;          /* content measure cap on wide screens    */
 	/* accent — default ASUSWRT teal; skins below remap ONLY these six */
 	--mc-accent: #25d0c0;
 	--mc-accent-2: #16b6d8;
@@ -84,30 +115,48 @@
 #app input, #app textarea { caret-color: var(--mc-accent); }
 #app label { cursor: pointer; }
 
-/* ---- 3. Outer frame (#FormTitle card) ----------------------------------- */
+/* ---- 3. Outer frame (#FormTitle card) -----------------------------------
+   Stock geometry pins the module to ~760px no matter how wide the window is,
+   which on a 1600px screen leaves two thirds of the page as empty wallpaper.
+   We let the router's .content grow and cap the module at a readable measure
+   instead, centred — wide enough to use the screen, not so wide that a row's
+   label and its control end up a hand's width apart. */
 #app .FormTitle { table-layout: fixed; }
+#app .content { width: auto !important; max-width: none !important; }
 #app #FormTitle {
+	width: 100% !important;
+	max-width: var(--mc-frame-max);
+	margin-left: auto !important;
+	margin-right: auto !important;
 	border-collapse: separate;
 	border-spacing: 0;
 	border: 1px solid var(--mc-border);
-	border-radius: var(--mc-r);
+	border-radius: var(--mc-r-frame);
+	/* translucent material: the router wallpaper stays faintly readable through
+	   the frame, which is what places the panel *above* the page rather than
+	   pasted onto it. Blur + saturate together, so what shows through keeps its
+	   colour instead of turning to grey mud. */
 	background:
 		radial-gradient(1200px 240px at 18% -8%, var(--mc-accent-soft), transparent 60%),
-		linear-gradient(180deg, var(--mc-frame), var(--mc-frame-2));
+		linear-gradient(180deg, var(--mc-glass), #0e151aeb);
+	-webkit-backdrop-filter: blur(var(--mc-glass-blur)) saturate(165%);
+	backdrop-filter: blur(var(--mc-glass-blur)) saturate(165%);
 	box-shadow: var(--mc-shadow-2), var(--mc-edge);
 }
 #app #FormTitle > tbody > tr > td {
 	background: transparent !important;
-	padding: 22px 24px 26px !important;
+	padding: 24px !important;
 }
 #app .formfonttitle {
 	font-family: var(--mc-font-ui);
 	font-size: 23px;
 	font-weight: 700;
-	letter-spacing: .2px;
-	line-height: 1.2;
+	/* tracking is size-specific: large text reads too loose at 0, so it goes
+	   negative here while body copy below stays at 0 */
+	letter-spacing: -.02em;
+	line-height: 1.15;
 	color: var(--mc-text);
-	padding-left: 14px;
+	padding-left: 16px;
 	position: relative;
 }
 #app .formfonttitle::before {
@@ -126,7 +175,7 @@
 	height: 1px;
 	border: 0;
 	background: linear-gradient(90deg, var(--mc-accent-line), var(--mc-border) 42%, transparent);
-	margin: 14px 0 16px !important;
+	margin: 16px 0 !important;
 }
 
 /* ---- 4. Notes & hints ----------------------------------------------------
@@ -180,11 +229,11 @@
    used as a plain header row in the subscription-link list. */
 #app table.FormTable, #app table.FormTable_table {
 	width: 100% !important;
-	margin: 14px 0 0 !important;
+	margin: 16px 0 0 !important;
 	border-collapse: separate !important;
 	border-spacing: 0 !important;
 	border: 1px solid var(--mc-border) !important;
-	border-radius: var(--mc-r-sm);
+	border-radius: var(--mc-r-card);
 	background: var(--mc-surface);
 	box-shadow: var(--mc-shadow-1), var(--mc-edge);
 	outline: none !important;
@@ -197,9 +246,9 @@
 	color: var(--mc-text) !important;
 	font-weight: 700;
 	font-size: 13px;
-	letter-spacing: .4px;
+	letter-spacing: .02em;
 	text-align: left;
-	padding: 12px 16px !important;
+	padding: 12px var(--mc-gutter) !important;
 	border: 0 !important;
 	border-bottom: 1px solid var(--mc-border) !important;
 	position: relative;
@@ -220,27 +269,93 @@
 	font-size: 13px;
 	text-align: left;
 	vertical-align: middle;
-	padding: 13px 16px !important;
+	letter-spacing: 0;
+	padding: var(--mc-row-y) var(--mc-gutter) !important;
 	border: 0 !important;
-	border-bottom: 1px solid var(--mc-border-soft) !important;
 }
-/* label column must not collapse to one-char-per-line when the value cell
-   is stuffed with wide floats; fused list headers keep their % widths */
-#app .FormTable > tbody > tr > th { min-width: 110px; }
+/* ---- 5b. Row grid — the alignment rule ------------------------------------
+   Nearly every row on this page is <th>label</th><td>value</td>. For those we
+   drop the table layout algorithm and lay the row out as flex.
+
+   Why bother: with `table-layout:auto` the label column is sized by content, so
+   a row whose value cell carries wide floats squeezes its label to 236px while
+   its neighbours sit at 248px. That 12px stagger repeats down the page and is
+   exactly the "something's off" feeling you can't point at. One flex-basis
+   token fixes every row at once. `table-layout:fixed` can't do it — the
+   colspan'd card-header row would define the column grid instead.
+
+   The `:has(> th + td:last-child)` guard is load-bearing, not decoration. The
+   访问控制 tab builds its ACL lists from JS only once you open that tab, and
+   those are real multi-column tables (th th th th) that need their percentage
+   widths. Without the guard they were laid out as flex and blew 105px past the
+   window. The guard also degrades safely: a browser without :has() drops these
+   rules and simply falls back to the old table layout.
+
+   Measured after, on all 8 tabs: label width 232px everywhere, value column
+   starting on the identical x everywhere, and no horizontal overflow. */
+#app .FormTable > tbody > tr:has(> th + td:last-child),
+#app .FormTable_table > tbody > tr:has(> th + td:last-child),
+#app .FormTable > thead > tr:has(> td:only-child),
+#app .FormTable_table > thead > tr:has(> td:only-child) {
+	display: flex;
+	align-items: center;
+}
+#app .FormTable > tbody > tr:has(> th + td:last-child) > th,
+#app .FormTable_table > tbody > tr:has(> th + td:last-child) > th {
+	flex: 0 0 var(--mc-label-w);
+	width: var(--mc-label-w);
+	min-width: 0;
+	box-sizing: border-box;
+}
+#app .FormTable > tbody > tr:has(> th + td:last-child) > td,
+#app .FormTable_table > tbody > tr:has(> th + td:last-child) > td,
+#app .FormTable > thead > tr:has(> td:only-child) > td,
+#app .FormTable_table > thead > tr:has(> td:only-child) > td {
+	flex: 1 1 auto;
+	min-width: 0;
+	box-sizing: border-box;
+}
+/* a tall value cell (config box, log, list) shouldn't drag its label to the
+   vertical middle of a 380px box, half a screen from what it names */
+#app .FormTable > tbody > tr:has(textarea) > th,
+#app .FormTable > tbody > tr:has(td table) > th,
+#app .FormTable > tbody > tr:has(td ul) > th { align-self: flex-start; }
+/* narrow windows: stack label over value instead of crushing the value column */
+@media (max-width: 860px) {
+	#app .FormTable > tbody > tr:has(> th + td:last-child),
+	#app .FormTable_table > tbody > tr:has(> th + td:last-child) { flex-wrap: wrap; }
+	#app .FormTable > tbody > tr:has(> th + td:last-child) > th,
+	#app .FormTable_table > tbody > tr:has(> th + td:last-child) > th {
+		flex-basis: 100%;
+		width: auto;
+		padding-bottom: 0 !important;
+	}
+}
 #app .FormTable td, #app .FormTable_table td {
 	background: transparent !important;
 	color: var(--mc-text);
 	vertical-align: middle;
-	padding: 11px 16px !important;
+	padding: var(--mc-row-y) var(--mc-gutter) !important;
 	border: 0 !important;
-	border-bottom: 1px solid var(--mc-border-soft) !important;
 	line-height: 1.6;
 }
 #app .FormTable tr:last-child th, #app .FormTable tr:last-child td,
 #app .FormTable_table tr:last-child th, #app .FormTable_table tr:last-child td { border-bottom: 0 !important; }
+/* the row divider lives on the <tr>, never on th/td: as flex items the two
+   cells have different heights (a 30px label beside a 377px config box), so a
+   per-cell border draws the SAME divider at two different y — measured 13px to
+   347px apart before this. One border on the row = one line, always straight. */
+#app .FormTable > tbody > tr:has(> th + td:last-child),
+#app .FormTable_table > tbody > tr:has(> th + td:last-child) {
+	border-bottom: 1px solid var(--mc-border-soft);
+}
+#app .FormTable > tbody > tr:last-child, #app .FormTable_table > tbody > tr:last-child { border-bottom: 0; }
+/* multi-column list rows keep their own per-cell divider (they have no th) */
+#app .FormTable_table > tbody > tr:not(:has(> th + td:last-child)) > th,
+#app .FormTable_table > tbody > tr:not(:has(> th + td:last-child)) > td { border-bottom: 1px solid var(--mc-border-soft) !important; }
 #app .FormTable tbody tr, #app .FormTable_table tbody tr { transition: background var(--mc-dur) var(--mc-ease); }
 #app .FormTable tbody tr:hover, #app .FormTable_table tbody tr:hover { background: #ffffff06; }
-#app .sp_bottom_line { border-bottom: 1px solid var(--mc-border-soft) !important; }
+#app .sp_bottom_line { border-bottom: 0 !important; }   /* superseded by the row divider above */
 
 /* List tables (.list_table — ACL rule rows). On the stock sheet these are
    750px-wide twins of the header table above them; 100% keeps the columns
@@ -311,13 +426,15 @@
 	background: transparent !important;
 	cursor: pointer;
 	transition: color var(--mc-dur) var(--mc-ease), background var(--mc-dur) var(--mc-ease),
-		box-shadow var(--mc-dur) var(--mc-ease), transform var(--mc-dur) var(--mc-ease);
+		box-shadow var(--mc-dur) var(--mc-ease), transform var(--mc-dur-press) var(--mc-ease);
 }
-#app input[class*=show-btn]:hover, #app .sub-node1:hover, #app .sub-node2:hover {
-	color: var(--mc-text);
-	background: #ffffff0d !important;
+@media (hover: hover) and (pointer: fine) {
+	#app input[class*=show-btn]:hover, #app .sub-node1:hover, #app .sub-node2:hover {
+		color: var(--mc-text);
+		background: #ffffff0d !important;
+	}
 }
-#app input[class*=show-btn]:active, #app .sub-node1:active, #app .sub-node2:active { transform: translateY(1px); }
+#app input[class*=show-btn]:active, #app .sub-node1:active, #app .sub-node2:active { transform: scale(.97); }
 #app input[class*=show-btn].active, #app .sub-node1.active, #app .sub-node2.active, #app .active {
 	color: var(--mc-accent-ink) !important;
 	background: linear-gradient(180deg, var(--mc-accent), var(--mc-accent-2)) !important;
@@ -349,39 +466,49 @@
 	cursor: pointer;
 	transition: color var(--mc-dur) var(--mc-ease), background var(--mc-dur) var(--mc-ease),
 		border-color var(--mc-dur) var(--mc-ease), box-shadow var(--mc-dur) var(--mc-ease),
-		transform var(--mc-dur) var(--mc-ease);
+		transform var(--mc-dur-press) var(--mc-ease);
 }
-#app[skin] .ks_btn:hover, #app[skin] a.ks_btn:hover {
-	width: auto;
-	padding: 8px 13px;
-	font-size: 13px;
-	border-radius: var(--mc-pill);   /* softcenter's hover tier resets it to 5px */
-	color: var(--mc-accent-ink);
-	background: linear-gradient(180deg, var(--mc-accent), var(--mc-accent-2));
-	border-color: transparent;
-	box-shadow: 0 6px 18px var(--mc-accent-glow);
-	transform: translateY(-1px);
+/* hover is gated: a touch screen fires it on tap, so an ungated hover state
+   leaves the button stuck "lit" after the finger lifts */
+@media (hover: hover) and (pointer: fine) {
+	#app[skin] .ks_btn:hover, #app[skin] a.ks_btn:hover {
+		width: auto;
+		padding: 8px 13px;
+		font-size: 13px;
+		border-radius: var(--mc-pill);   /* softcenter's hover tier resets it to 5px */
+		color: var(--mc-accent-ink);
+		background: linear-gradient(180deg, var(--mc-accent), var(--mc-accent-2));
+		border-color: transparent;
+		box-shadow: 0 6px 18px var(--mc-accent-glow);
+		transform: translateY(-1px);
+	}
 }
-#app[skin] .ks_btn:active, #app[skin] a.ks_btn:active { transform: translateY(0); box-shadow: 0 2px 8px var(--mc-accent-glow); }
-/* header status row: 重启&保存/详细状态 live in position:absolute divs with
-   hard-coded margin-left 300/380px (~80px apart) whose shrink-to-fit would
-   squeeze the pills — max-content + compact metrics; (1,3,1) outranks both
-   hover tiers so the geometry holds on hover too */
-#app[skin] td > div[style*="absolute"] .ks_btn { padding: 7px 10px; font-size: 12px; width: max-content; }
-/* …and in :has()-capable browsers, retire the absolute hack entirely:
-   flex row — switch + version on the left, button pair on the right */
-#app[skin] td:has(> div[style*="absolute"] > .ks_btn) {
-	display: flex !important;
-	align-items: center !important;
-	gap: 10px;
+/* Feedback belongs on press-down, not on release: scale is the cheapest signal
+   that the interface heard you, and it lands before the click handler runs. */
+#app[skin] .ks_btn:active, #app[skin] a.ks_btn:active {
+	transform: scale(.97);
+	box-shadow: 0 2px 8px var(--mc-accent-glow);
 }
-#app[skin] td:has(> div[style*="absolute"] > .ks_btn) > div {
-	position: static !important;
-	float: none !important;
-	margin: 0 !important;
-	padding: 0 !important;
+/* ---- 7b. Main status row (.mc-row-main) ----------------------------------
+   Upstream builds this row out of five divs each pinned with
+   `position:absolute; margin-left:70/290/300/380px`. Those numbers were tuned
+   against one window width; anywhere else the pieces overlap or the labels wrap
+   mid-word. The markup is now a plain flex row (see Module_merlinclash.asp) and
+   the spacing lives here, where it can respond to the container.
+   Layout: [toggle] [check-for-update] ····· [version] [restart] [details] */
+#app .mc-row-main {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--mc-gap);
+	width: 100%;
 }
-#app[skin] td:has(> div[style*="absolute"] > .ks_btn) > div:nth-of-type(2) { margin-right: auto !important; }
+#app .mc-row-main > div { display: flex; align-items: center; }
+#app .mc-row-main .mc-row-gap { flex: 1 1 24px; }   /* the only thing that stretches */
+#app #mc_selfupdate_bar { gap: 8px; white-space: nowrap; }
+#app #merlinclash_version_show { color: var(--mc-text-faint); white-space: nowrap; }
+#app[skin] .mc-row-main .ks_btn { padding: 8px 14px; font-size: 12.5px; width: max-content; }
+
 #app .button_gen, #app input.button_gen {
 	-webkit-appearance: none;
 	appearance: none;
@@ -397,14 +524,16 @@
 	box-shadow: 0 4px 14px var(--mc-accent-glow), inset 0 1px 0 #ffffff40;
 	cursor: pointer;
 	transition: filter var(--mc-dur) var(--mc-ease), box-shadow var(--mc-dur) var(--mc-ease),
-		transform var(--mc-dur) var(--mc-ease);
+		transform var(--mc-dur-press) var(--mc-ease);
 }
-#app .button_gen:hover, #app input.button_gen:hover {
-	filter: brightness(1.07);
-	transform: translateY(-1px);
-	box-shadow: 0 8px 22px var(--mc-accent-glow), inset 0 1px 0 #ffffff40;
+@media (hover: hover) and (pointer: fine) {
+	#app .button_gen:hover, #app input.button_gen:hover {
+		filter: brightness(1.07);
+		transform: translateY(-1px);
+		box-shadow: 0 8px 22px var(--mc-accent-glow), inset 0 1px 0 #ffffff40;
+	}
 }
-#app .button_gen:active, #app input.button_gen:active { transform: translateY(0); }
+#app .button_gen:active, #app input.button_gen:active { transform: scale(.97); }
 #app .apply_gen { text-align: center; margin: 14px 0; background: transparent !important; }
 #app .merlinclash-btn-container { display: flex; flex-direction: column; gap: 4px; }
 #app .merlinclash-btn-container p { color: var(--mc-text-faint); font-size: 12px; }
@@ -422,7 +551,10 @@
 	cursor: pointer;
 	transition: color var(--mc-dur) var(--mc-ease), background var(--mc-dur) var(--mc-ease);
 }
-#app .button-add:hover { color: var(--mc-accent-ink); background: var(--mc-accent); }
+@media (hover: hover) and (pointer: fine) {
+	#app .button-add:hover { color: var(--mc-accent-ink); background: var(--mc-accent); }
+}
+#app .button-add:active { transform: scale(.97); }
 /* image-hook buttons — URLs must stay exactly as the stock sheet (31×31 PNGs) */
 #app .remove_btn { background: transparent url(/res/accountdelete.png) no-repeat scroll center top; cursor: pointer; width: 31px; height: 31px; border: 0; padding: 0; }
 #app .add_btn    { background: transparent url(/res/accountadd.png)    no-repeat scroll center top; cursor: pointer; width: 31px; height: 31px; border: 0; padding: 0; }
@@ -497,6 +629,28 @@
 	background: var(--mc-inset);
 	box-shadow: 0 0 0 3px var(--mc-accent-glow);
 }
+/* ---- 8b. Colour discipline -------------------------------------------------
+   The firmware sheet ships `.FormTable td span { color:#FC0 }` — every <span>
+   inside a form cell is painted amber whether or not it means anything. On this
+   page that catches version strings, hints and status lines alike, so text
+   turns gold at random and the colours that DO carry meaning stop standing out.
+   Spans inherit their cell's colour here; meaning is assigned deliberately
+   below, mapping the page's seven hard-coded hexes onto four semantic tokens. */
+#app .FormTable td span, #app .FormTable_table td span { color: inherit; }
+#app [style*="#FC0"], #app [style*="#fc0"] { color: var(--mc-amber) !important; }
+#app [style*="#ff9900"], #app [style*="#FF9900"] { color: var(--mc-amber) !important; }
+#app [style*="#6C0"], #app [style*="#6c0"], #app [style*="#5ce58a"] { color: var(--mc-green) !important; }
+#app [style*="#ff3358"], #app [style*="#ff0000"], #app [style*="#FF0000"] { color: var(--mc-red) !important; }
+/* runtime-status block: four log lines, so set them in mono — the timestamps
+   then line up as a column instead of ragged proportional text */
+#app #clash_state td {
+	font-family: var(--mc-font-mono);
+	font-size: 12.5px;
+	letter-spacing: .01em;
+	line-height: 1.75;
+}
+#app #merlinclash_core_version { color: var(--mc-text); font-weight: 600; }
+
 #app .mc_outline { outline: 1px solid var(--mc-border-hi); border-radius: var(--mc-r-xs); }
 #app input[type=button]:focus { outline: none; }
 #app input[type=checkbox], #app input[type=radio] { vertical-align: middle; accent-color: var(--mc-accent); }
@@ -548,6 +702,11 @@
 	font-size: 11.5px !important;
 }
 #app #log_content3, #app #loading_block2 { line-height: 1.55; }
+/* the log viewers carry an inline `width:709px` from the stock markup, sized
+   for the old 760px card. In a 1165px one they sit in the left half with a
+   third of the panel empty beside them — inline styles need !important. */
+#app #log_content1, #app #log_content3 { width: 100% !important; }
+#app #log_content { padding: 0; }
 
 /* ---- 10. Toggle switches — FULL geometry takeover ---------------------------
    Stock firmware switches vary wildly (ROG: 50×30 square block + 26px knob with
@@ -590,7 +749,9 @@
 	border-radius: 50% !important;
 	background: #fff !important;
 	box-shadow: 0 1px 3px #00000080 !important;
-	transition: left var(--mc-dur) var(--mc-ease) !important;
+	/* the knob is the one thing on this page a finger "throws" — a touch of
+	   overshoot reads as physical; everything else stays critically damped */
+	transition: left var(--mc-dur) cubic-bezier(.34, 1.4, .64, 1) !important;
 }
 #app[skin] .switch_circle > div { display: none !important; }   /* firmware ✓/✕ icon */
 #app[skin] .switch:checked + .switch_container, #app[skin] .switch:checked ~ .switch_container {
@@ -692,7 +853,10 @@
 #app::-webkit-scrollbar-thumb:hover, #app ::-webkit-scrollbar-thumb:hover { background-color: var(--mc-accent-line); }
 #app::-webkit-scrollbar-track, #app ::-webkit-scrollbar-track { background-color: transparent; }
 
-/* ---- 15. Accessibility ------------------------------------------------------- */
+/* ---- 15. Accessibility ------------------------------------------------------
+   Three independent user signals, three different answers. "Reduced motion"
+   does not mean no feedback — it means the non-vestibular equivalent, so the
+   colour and opacity cues that carry meaning stay. */
 #app a:focus-visible, #app button:focus-visible, #app input:focus-visible,
 #app select:focus-visible, #app textarea:focus-visible {
 	outline: 2px solid var(--mc-accent);
@@ -703,4 +867,25 @@
 		transition-duration: .001ms !important;
 		animation-duration: .001ms !important;
 	}
+}
+/* translucency off → frost the material solid rather than just dropping blur,
+   otherwise the wallpaper reads straight through the panel */
+@media (prefers-reduced-transparency: reduce) {
+	#app #FormTitle {
+		-webkit-backdrop-filter: none;
+		backdrop-filter: none;
+		background: linear-gradient(180deg, var(--mc-frame), var(--mc-frame-2));
+	}
+	#app .popup_bar_bg_ks, #app .popup_bg { -webkit-backdrop-filter: none; backdrop-filter: none; }
+	#app .contentM_qis, #app .contentMKP_qis, #app .content_status {
+		-webkit-backdrop-filter: none;
+		backdrop-filter: none;
+		background: var(--mc-surface) !important;
+	}
+}
+/* high contrast → near-solid surfaces with a defined border, no soft edges */
+@media (prefers-contrast: more) {
+	#app { --mc-border: #ffffff4d; --mc-border-soft: #ffffff33; --mc-border-hi: #ffffff73; --mc-text-dim: #cddae0; --mc-text-faint: #9fb2bb; }
+	#app #FormTitle { background: var(--mc-frame-2); -webkit-backdrop-filter: none; backdrop-filter: none; }
+	#app table.FormTable, #app table.FormTable_table { background: #16202666; }
 }

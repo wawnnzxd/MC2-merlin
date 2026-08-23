@@ -2735,32 +2735,36 @@ function getACLConfigs(db_acl) {
 													<tr>
 														<th class="sp_bottom_line" id="merlinclash_switch">总开关</th>
 														<td class="sp_bottom_line" colspan="2">
-															<div class="switch_field" style="display:table-cell;float: left;">
-																<label for="merlinclash_enable">
-																	<input id="merlinclash_enable" onclick="apply()" class="switch" type="checkbox" style="display: none;">
-																	<div class="switch_container" >
-																		<div class="switch_bar"></div>
-																		<div class="switch_circle transition_style">
-																			<div></div>
+															<!-- MC2-merlin:上游原本用 position:absolute + margin-left:70/290/300/380px 硬编码堆这一行,
+															     宽屏下必然撕裂、文字折行。改为一条 flex 行,间距全交给 CSS(.mc-row-main),不再有魔法像素。 -->
+															<div class="mc-row-main">
+																<div class="switch_field">
+																	<label for="merlinclash_enable">
+																		<input id="merlinclash_enable" onclick="apply()" class="switch" type="checkbox" style="display: none;">
+																		<div class="switch_container" >
+																			<div class="switch_bar"></div>
+																			<div class="switch_circle transition_style">
+																				<div></div>
+																			</div>
 																		</div>
-																	</div>
-																</label>
-															</div>
-															<!-- MC2-merlin 自更新:查自己的 GitHub Release -->
-															<div id="mc_selfupdate_bar" style="display:table-cell;float:left;position:absolute;margin-left:290px;padding:5.5px 0px;">
-																<a class="hintstyle" id="mc_selfupdate_btn" href="javascript:void(0)" onclick="mc_selfupdate('check')" style="cursor:pointer"><i>检查更新</i></a>
-																<span id="mc_selfupdate_msg" style="margin-left:8px"></span>
-															</div>
-															<div id="merlinclash_version_show" style="display:table-cell;float: left;position: absolute;margin-left:70px;padding: 5.5px 0px;">
-																<a class="hintstyle">
-																	<i>当前版本：</i>
-																</a>
-															</div>
-															<div id="merlinclash_restart" style="display:table-cell;float: left;position: absolute;margin-left:300px;padding: 5.5px 0px;">
-																<a type="button" class="ks_btn" style="cursor:pointer" onclick="apply()" href="javascript:void(0);">重启&保存</a>
-															</div>
-															<div style="display:table-cell;float: left;margin-left:380px;position: absolute;padding: 5.5px 0px;">
-																<a type="button" class="ks_btn" style="cursor:pointer" onclick="get_proc_status()" href="javascript:void(0);">详细状态</a>
+																	</label>
+																</div>
+																<div id="mc_selfupdate_bar">
+																	<a class="hintstyle" id="mc_selfupdate_btn" href="javascript:void(0)" onclick="mc_selfupdate('check')" style="cursor:pointer"><i>检查更新</i></a>
+																	<span id="mc_selfupdate_msg"></span>
+																</div>
+																<div class="mc-row-gap"></div>
+																<div id="merlinclash_version_show">
+																	<a class="hintstyle">
+																		<i>当前版本：</i>
+																	</a>
+																</div>
+																<div id="merlinclash_restart">
+																	<a type="button" class="ks_btn" style="cursor:pointer" onclick="apply()" href="javascript:void(0);">重启&保存</a>
+																</div>
+																<div>
+																	<a type="button" class="ks_btn" style="cursor:pointer" onclick="get_proc_status()" href="javascript:void(0);">详细状态</a>
+																</div>
 															</div>
 														</td>
 													</tr>

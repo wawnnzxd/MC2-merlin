@@ -81,3 +81,29 @@ gh release create vx.y.z.n packages/MC2_x.y.z.n_ARM64.tar.gz --title "MC2 x.y.z.
 - `/_api/` 的 `method` **必须带 `.sh`**(`clash_selfupdate.sh`),写成 `clash_selfupdate` httpd 找不到脚本、前端只看到失败。
 - `versioncmp A B` 在 **A 比 B 新时输出 `-1`**(反直觉),判新版用 `= "-1"`。
 - 手动起内核是 `clash_config.sh restart restart`(动作在 **第 2 个参数**,`case $2 in`),只给一个参数什么都不干。
+
+## 设计(v1.2.2.5 起)
+
+皮肤是梅林风格(`<body skin='ASUSWRT'>` 固定,不跟随固件 `sc_skin`),视觉语言取 iOS 26 那套:
+半透明材质 + 高光边 + 同心圆角 + 强 ease-out 曲线。`res/merlinclash.css` 里所有值都来自
+文件顶部的 token,三条规矩:
+
+- **间距全是 4 的倍数**,来自 `--mc-gutter` / `--mc-row-y` / `--mc-gap` 三个 token;
+- **圆角走同心阶梯**:frame 22 → card 16 → control 11 → chip 8,嵌套的角才平行;
+- **过渡必须写明属性**,不用 `all`;曲线只有两条(`--mc-ease` 强 ease-out、`--mc-ease-move`
+  强 ease-in-out),**不用 `ease-in`**——它拖慢第一帧,而那正是眼睛盯着的一刻。
+
+排版上做的实事(全部有量化验证,探针见 [SESSION_NOTES.md](SESSION_NOTES.md)):
+
+| 问题 | 改法 |
+|---|---|
+| 标签列宽 236/248 两种,整页错位 12px | 行改 flex,`--mc-label-w` 一个 token 定死;8 个 tab 实测 232px / 数值列同一 x |
+| 每行的标签下划线和数值下划线不在同一条 y(差 13~347px) | 分隔线改画在 `<tr>` 上 |
+| 1600px 屏上模块只占 760px,三分之二是壁纸 | `.content` 放开 + 模块 `max-width:1240px` 居中 |
+| 总开关行五个 div 用绝对定位硬编码像素堆叠,宽屏撕裂、窄屏断行 | 重写成 `.mc-row-main` flex 行 |
+| 固件 CSS 把每个单元格里的 span 无差别染金 | span 继承单元格颜色,7 种硬编码色映射到 4 个语义 token |
+| 按钮按下没有反馈 | 全部 `:active { transform: scale(.97) }`,130ms;hover 收进 `(hover:hover)` 门控 |
+| 窄窗口把数值列挤扁 | `max-width:860px` 时标签换行到上方 |
+
+无障碍:`prefers-reduced-motion` / `prefers-reduced-transparency` / `prefers-contrast` 三个信号各有对策
+(减少动效不等于没有反馈,保留承载信息的颜色与透明度变化)。
