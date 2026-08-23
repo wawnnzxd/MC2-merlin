@@ -107,3 +107,35 @@ gh release create vx.y.z.n packages/MC2_x.y.z.n_ARM64.tar.gz --title "MC2 x.y.z.
 
 无障碍:`prefers-reduced-motion` / `prefers-reduced-transparency` / `prefers-contrast` 三个信号各有对策
 (减少动效不等于没有反馈,保留承载信息的颜色与透明度变化)。
+
+## 更新为什么快(1.2.2.10 起)
+
+包**始终是完整的** —— 装完就是能用的全套,不留「以后还得再下一次」的尾巴。
+省开销全靠实现,不靠少发文件:
+
+| 环节 | 上游做法 | 这里的做法 | 效果 |
+|---|---|---|---|
+| 下载 → 解包 | 先把 21MB 的 tar.gz 存进 `/tmp`,再解出 24MB | `curl \| tar -xz` 流式,tarball 不落地 | tmpfs 峰值 **45MB → 24MB**(`/tmp` 是 tmpfs,占的是物理内存) |
+| 完整性校验 | `tar -tzf` 预检一遍,再 `tar -xzf` 解一遍 | 解包本身就是校验(管道里 `$?` 取 tar 的),外加校验解出的 version 是否等于目标版本 | 整包少 gunzip 一遍 |
+| 写回 U 盘 | `rm -rf` 整个目录 → 无条件 `cp -rf` | 目录指纹一致就整个跳过;不一致则逐文件比对,只写真的变了的;`prune` 删掉源里已没有的 | 内容没变时 **~25MB 写入 → 0** |
+
+指纹 = `md5(排序后的「文件名 + 各文件 md5」)`,存在 `/koolshare/merlinclash/.fp_<目录名>`。
+源在 tmpfs(内存)读它几乎不要钱,目标在 U 盘上读它才贵 —— 所以只算源侧指纹。
+实测 13MB / 409 文件的 dashboard:指纹 **0.07 秒**,逐文件比对 0.66 秒(热缓存),
+安装时冷读 U 盘约 **4 秒**。
+
+为什么在意 U 盘写入:本机这块 eVtran 没有掉电保护,已经因写入损坏过多次(见 `router-ops/`)。
+每次更新白写 25MB 是纯粹的损耗。
+
+⚠️ **`prune` 只能用于 MC2 独占的目录**(`dashboard`、`rule_configs`)。
+`/koolshare/bin`、`/koolshare/scripts`、`/koolshare/res`、`/koolshare/webs` 是**所有插件共用**的,
+在那里删「源里没有的文件」会删掉别的插件的东西。
+
+### 曾经走过的弯路(别再走)
+- **v1.2.2.6 发过一个 slim 增量包**(只含 scripts/webs/res,20MB → 0.12MB)。
+  这是「少发文件」不是「做得更快」:装完包是残的,以后真要面板或 Geo 还得再下一次,
+  只是把成本推后。已撤销,v1.2.2.6 / v1.2.2.7 上的 slim 资产也已删除。
+- **v1.2.2.8 加了内容比对却毫无效果**:install.sh 的「清理旧文件」段在复制**之前**
+  就 `rm -rf` 掉了整个 dashboard、rule_configs 和 bin/clash,目标被清空,比对必然全落空。
+  v1.2.2.9 去掉这三处预删除、改用 rsync 语义(prune + 写前 unlink)后才真正生效。
+  **教训:优化完一定要看真机日志确认它真的生效了**,别只看代码写对了没有。
