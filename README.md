@@ -31,9 +31,19 @@ patch 冲突 = 上游动了我们改的地方,手工合一下再 `diff -u` 重�
 
 ## 安装
 
-软件中心 → 离线安装 → 上传 `packages/*.tar.gz`;或 SSH:
+安装包在 [Releases](https://github.com/wawnnzxd/MC2-merlin/releases)(**不进 git 历史**,每版 20MB 二进制会让仓库膨胀)。
+
+软件中心 → 离线安装 → 上传 tar.gz;或 SSH:
 ```sh
 tar -xzf MC2_*.tar.gz -C /tmp && sh /tmp/merlinclash/install.sh
+# ⚠️ 重装后 merlinclash_enable 会被置 0,且手动起内核必须用 restart(start 是开机自启分支,会先 sleep 120s)
+dbus set merlinclash_enable=1 && sh /koolshare/scripts/clash_config.sh restart
+```
+
+发版:
+```sh
+COPYFILE_DISABLE=1 tar --no-xattrs -czf packages/MC2_x.y.z.n_ARM64.tar.gz merlinclash
+gh release create vx.y.z.n packages/MC2_x.y.z.n_ARM64.tar.gz --title "MC2 x.y.z.n" --notes "…"
 ```
 
 ## 1.2.2 上游变更摘要(2026-08-23 评估)
