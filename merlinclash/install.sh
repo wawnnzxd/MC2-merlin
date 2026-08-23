@@ -61,19 +61,36 @@ fuck_bug(){
 		exit_install 2
 	fi
 }
-# MC2-merlin: 自更新用的"瘦包"只带 scripts/webs/res/version(~600KB),不带
-# bin64(11M)和 dashboard(13M)—— 那两样逐版没变过,每次重传+重写回 U 盘纯属浪费。
-# 但瘦包**不能**用来全新安装:没有 mihomo 二进制装完就是个空壳。
-slim_guard(){
-	if [ ! -d /tmp/merlinclash/bin64 ] && [ ! -d /tmp/merlinclash/bin32 ]; then
-		if [ ! -x /koolshare/bin/clash ]; then
-			echo_date "这是增量(slim)包,只能用于升级已安装的 MC2。"
-			echo_date "本机没有检测到 /koolshare/bin/clash,请改用完整包安装。"
-			exit_install 1
+# ── MC2-merlin:只写真正变了的文件 ────────────────────────────────────────
+# 上游是无条件 `cp -rf`,每次更新都把 bin64(11MB)+ dashboard(13MB)+ rule_configs
+# (1.6MB)一字不差地重写回 U 盘。可这几样在多数版本之间根本没变——2026-08-23
+# 一下午发的 4 个版本,包体积只差几 KB,实际改动全在 scripts/webs/res。
+# U 盘写入慢、且本机这块 eVtran 已经因为写入损坏过多次(见 router-ops/)。
+#
+# 算法:先比字节数(不读内容,一次 stat),大小相同才 cmp 比内容;两关都过就跳过。
+# 大小不同的文件在第一关就被判定要写,不会白读一遍。读远比写便宜,也不伤寿命。
+# **一个文件都不会少装** —— 只是内容一样的不再重复写一遍。
+cp_smart(){
+	SRC="$1"; DST="$2"
+	[ -d "$SRC" ] || return 0
+	mkdir -p "$DST" 2>/dev/null
+	CS_W=0; CS_S=0
+	CS_OIFS="$IFS"; IFS='
+'
+	for rel in $(cd "$SRC" && find . -type f | sed 's|^\./||'); do
+		cs_s="$SRC/$rel"; cs_d="$DST/$rel"
+		if [ -f "$cs_d" ] \
+			&& [ "$(wc -c < "$cs_s")" -eq "$(wc -c < "$cs_d")" ] \
+			&& cmp -s "$cs_s" "$cs_d"; then
+			CS_S=$((CS_S+1)); continue
 		fi
-		echo_date "增量包:跳过 mihomo 内核与面板(沿用本机现有文件)"
-	fi
+		mkdir -p "$(dirname "$cs_d")" 2>/dev/null
+		cp -f "$cs_s" "$cs_d" && CS_W=$((CS_W+1))
+	done
+	IFS="$CS_OIFS"
+	echo_date "  $(basename "$SRC"): 写入 $CS_W 个,跳过 $CS_S 个未变化的文件"
 }
+
 platform_test(){
 	# 带koolshare文件夹，有httpdb和skipdb的固件位支持固件
 	if [ -d "/koolshare" -a -x "/koolshare/bin/httpdb" -a -x "/usr/bin/skipd" ];then
@@ -340,13 +357,13 @@ install_now(){
 		if [ "${LINUX_VER}" != "44" ]; then
 			rm -rf /tmp/merlinclash/bin32/haveged
 		fi
-		[ -d /tmp/merlinclash/bin32 ] && cp -rf /tmp/merlinclash/bin32/* /koolshare/bin/
+		cp_smart /tmp/merlinclash/bin32 /koolshare/bin
 	else
-		[ -d /tmp/merlinclash/bin64 ] && cp -rf /tmp/merlinclash/bin64/* /koolshare/bin/
+		cp_smart /tmp/merlinclash/bin64 /koolshare/bin
 	fi
 	
-	[ -d /tmp/merlinclash/conf ] && cp -rf /tmp/merlinclash/conf/* /koolshare/merlinclash/conf/
-	[ -f /tmp/merlinclash/clash/Shanghai ] && cp -rf /tmp/merlinclash/clash/Shanghai /koolshare/merlinclash/
+	cp_smart /tmp/merlinclash/conf /koolshare/merlinclash/conf
+	cp -rf /tmp/merlinclash/clash/Shanghai /koolshare/merlinclash/
 	cp -rf /tmp/merlinclash/version /koolshare/merlinclash/
 
 	if [ "${mcinstall}" == "1" ]; then
@@ -359,35 +376,35 @@ install_now(){
 		rm -rf /tmp/merlinclash/yaml_basic/head.yaml
 
 	fi
-	[ -d /tmp/merlinclash/yaml_basic ] && cp -rf /tmp/merlinclash/yaml_basic/* /koolshare/merlinclash/yaml_basic/
+	cp_smart /tmp/merlinclash/yaml_basic /koolshare/merlinclash/yaml_basic
 	
 	if [ "${mcinstall}" != "1" ]; then
-		[ -d /tmp/merlinclash/yaml_dns ] && cp -rf /tmp/merlinclash/yaml_dns/* /koolshare/merlinclash/yaml_dns/
+		cp_smart /tmp/merlinclash/yaml_dns /koolshare/merlinclash/yaml_dns
 	fi
-	  [ -d /tmp/merlinclash/dashboard ] && cp -rf /tmp/merlinclash/dashboard/* /koolshare/merlinclash/dashboard/
-	  [ -d /tmp/merlinclash/rule_configs ] && cp -rf /tmp/merlinclash/rule_configs/* /koolshare/merlinclash/rule_configs/
+	  cp_smart /tmp/merlinclash/dashboard /koolshare/merlinclash/dashboard
+	  cp_smart /tmp/merlinclash/rule_configs /koolshare/merlinclash/rule_configs
 	#判断是否需要覆盖GeoSite  
 	geo_size=$(ls -l "$Geosite_PATH" 2>/dev/null | awk '{print $5}')
 	geoip_size=$(ls -l "$GeoIP_PATH" 2>/dev/null | awk '{print $5}')
 	if [ -f "$Geosite_PATH" ] && [ "$geo_size" -gt 1000000 ]; then
 		echo_date "已经存在GeoSite.dat文件，略过"
 	else
-		[ -f /tmp/merlinclash/clash/GeoSite.dat ] && cp -rf /tmp/merlinclash/clash/GeoSite.dat /koolshare/merlinclash/
+		cp -rf /tmp/merlinclash/clash/GeoSite.dat /koolshare/merlinclash/
 	fi
 	if [ -f "$GeoIP_PATH" ] && [ "$geoip_size" -gt 1000000 ]; then
 		echo_date "已经存在GeoIP.dat文件，略过"
 	else
-		[ -f /tmp/merlinclash/clash/GeoIP.dat ] && cp -rf /tmp/merlinclash/clash/GeoIP.dat /koolshare/merlinclash/
+		cp -rf /tmp/merlinclash/clash/GeoIP.dat /koolshare/merlinclash/
 	fi
 
 	echo_date "复制相关脚本文件..."	
-	cp -rf /tmp/merlinclash/scripts/* /koolshare/scripts/
+	cp_smart /tmp/merlinclash/scripts /koolshare/scripts
 	cp -rf /tmp/merlinclash/install.sh /koolshare/scripts/merlinclash_install.sh
 	cp -rf /tmp/merlinclash/uninstall.sh /koolshare/scripts/uninstall_merlinclash.sh
 
 	echo_date "复制相关网页文件..."	
-	cp -rf /tmp/merlinclash/webs/* /koolshare/webs/
-	cp -rf /tmp/merlinclash/res/* /koolshare/res/
+	cp_smart /tmp/merlinclash/webs /koolshare/webs
+	cp_smart /tmp/merlinclash/res /koolshare/res
 
 	echo_date "为新文件赋权..."	
 	chmod 755 /koolshare/bin/clash
@@ -487,7 +504,6 @@ install(){
 	get_model
 	get_fw_type
 	platform_test
-	slim_guard
 	fuck_bug
 	install_now
 }

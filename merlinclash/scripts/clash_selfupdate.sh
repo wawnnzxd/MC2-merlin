@@ -64,13 +64,12 @@ fetch_latest(){
 	fi
 	if [ ! -s "$JF" ] || ! grep -q '"tag_name"' "$JF"; then rm -f "$JF"; return 1; fi
 	TAG=$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' "$JF" | head -1)
-	# 瘦包优先:整包 21MB 里 24MB 解包内容有 22MB 是逐版没变过的 mihomo 二进制和
-	# dashboard;只改 UI/脚本的版本发一个 ~600KB 的 *_slim.tar.gz,省 35 倍流量,
-	# 也省掉 install.sh 每次把那 22MB 原样重写回 U 盘。没有瘦包就回落整包。
-	DL=$(sed -n 's/.*"browser_download_url": *"\([^"]*slim[^"]*\.tar\.gz\)".*/\1/p' "$JF" | head -1)
-	[ -z "$DL" ] && DL=$(sed -n 's/.*"browser_download_url": *"\([^"]*\.tar\.gz\)".*/\1/p' "$JF" | head -1)
+	# 只认完整包。包必须始终是完整的:装完就该是能用的全套,不能留下"以后还得
+	# 再下一次"的尾巴。省流量要靠更好的实现(流式解包 + install.sh 的内容比对写入),
+	# 不是靠少发文件。
+	DL=$(sed -n 's/.*"browser_download_url": *"\([^"]*\.tar\.gz\)".*/\1/p' "$JF" | head -1)
 	# 私有仓库的 asset 必须走 API url + Accept: application/octet-stream(browser_download_url 会 404)。
-	# 把 assets 数组按 },{ 拆行,只在**含所选包名的那一条**里取 url —— 否则挑了瘦包却下到整包。
+	# 把 assets 数组按 },{ 拆行,只在**含所选包名的那一条**里取 url。
 	ASSET_API=""
 	if [ -n "$DL" ]; then
 		ASSET_API=$(sed 's/},{/}\n{/g' "$JF" | grep -F "$(basename "$DL")" \
@@ -139,27 +138,26 @@ install)
 	http_response "installing:$LATEST"
 	(
 		trap '' HUP
-		echo_date "目标版本 $LATEST,下载 $(basename "$DL") ..." >> $LOG
-		rm -f /tmp/mc_update.tar.gz
-		if [ -n "$TOKEN" ] && [ -n "$ASSET_API" ]; then
-			curl -sL -m 300 -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" -o /tmp/mc_update.tar.gz "$ASSET_API"
-		else
-			curl -sL -m 300 -o /tmp/mc_update.tar.gz "$DL"
-		fi
-		SZ=$(wc -c < /tmp/mc_update.tar.gz 2>/dev/null || echo 0)
-		if [ "$SZ" -lt 200000 ]; then
-			echo_date "❌ 下载失败或文件异常($SZ 字节)" >> $LOG
-			set_status "failed:download-$SZ"; cleanup_tmp; rmdir "$LOCK" 2>/dev/null; exit 0
-		fi
-		# 解包即校验:tar -xzf 失败说明包坏了。原来先 tar -tzf 再 tar -xzf 等于把
-		# 21MB 整包 gunzip 两遍,白烧一倍 CPU(路由器上这不是小数目)。
-		echo_date "下载完成($((SZ/1024))KB),开始安装..." >> $LOG
-		set_status "installing:$LATEST"
+		echo_date "目标版本 $LATEST,下载并解包中..." >> $LOG
+		# 流式:curl 直接喂给 tar,不在 tmpfs 里落一份 21MB 的 tar.gz。
+		# 原来是「先存 21MB 再解出 24MB」,峰值占内存 45MB;现在只有解包出来的 24MB。
+		# /tmp 是 tmpfs —— 省下的就是实打实的 2GB 内存。
+		# 管道里 $? 取的是最后一个命令(tar)的状态:输入被截断时 tar 必定非 0,
+		# 所以这一条同时兼了"下载完整性校验",不用再单独 tar -tzf 把整包 gunzip 一遍。
 		rm -rf /tmp/merlinclash
-		if ! ( cd /tmp && tar -xzf /tmp/mc_update.tar.gz ) 2>/dev/null || [ ! -f /tmp/merlinclash/install.sh ]; then
-			echo_date "❌ 压缩包损坏或结构不对" >> $LOG
-			set_status "failed:bad-archive"; cleanup_tmp; rmdir "$LOCK" 2>/dev/null; exit 0
+		if [ -n "$TOKEN" ] && [ -n "$ASSET_API" ]; then
+			curl -sL -m 300 -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" "$ASSET_API" | tar -xz -C /tmp
+		else
+			curl -sL -m 300 "$DL" | tar -xz -C /tmp
 		fi
+		rc=$?
+		GOT="$(cat /tmp/merlinclash/version 2>/dev/null | tr -d ' \r\n')"
+		if [ "$rc" != "0" ] || [ ! -f /tmp/merlinclash/install.sh ] || [ "$GOT" != "$LATEST" ]; then
+			echo_date "❌ 下载或解包失败(tar rc=$rc,解出版本 '$GOT',期望 '$LATEST')" >> $LOG
+			set_status "failed:fetch-rc$rc"; cleanup_tmp; rmdir "$LOCK" 2>/dev/null; exit 0
+		fi
+		echo_date "解包完成($(du -sk /tmp/merlinclash | cut -f1)KB),开始安装..." >> $LOG
+		set_status "installing:$LATEST"
 		sh /tmp/merlinclash/install.sh >> $LOG 2>&1
 		rc=$?
 		NOW="$(sane "$(cur_ver)")"
