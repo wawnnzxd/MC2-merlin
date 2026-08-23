@@ -62,19 +62,29 @@ fuck_bug(){
 	fi
 }
 # ── MC2-merlin:只写真正变了的文件 ────────────────────────────────────────
-# 上游是无条件 `cp -rf`,每次更新都把 bin64(11MB)+ dashboard(13MB)+ rule_configs
-# (1.6MB)一字不差地重写回 U 盘。可这几样在多数版本之间根本没变——2026-08-23
-# 一下午发的 4 个版本,包体积只差几 KB,实际改动全在 scripts/webs/res。
-# U 盘写入慢、且本机这块 eVtran 已经因为写入损坏过多次(见 router-ops/)。
+# 上游的做法是「先 rm -rf 整个目录,再无条件 cp -rf」。这保证不留旧文件,代价是
+# 每次更新都把 bin64 里的 clash(10MB)+ dashboard(13MB)+ rule_configs(1.6MB)
+# 一字不差地重写回 U 盘 —— 而这几样在多数版本之间根本没变(2026-08-23 一下午发的
+# 4 个版本,包体积只差几 KB,改动全在 scripts/webs/res)。
+# U 盘写入慢且伤寿命:本机这块 eVtran 已经因写入损坏过多次(见 router-ops/)。
 #
-# 算法:先比字节数(不读内容,一次 stat),大小相同才 cmp 比内容;两关都过就跳过。
-# 大小不同的文件在第一关就被判定要写,不会白读一遍。读远比写便宜,也不伤寿命。
-# **一个文件都不会少装** —— 只是内容一样的不再重复写一遍。
-cp_smart(){
-	SRC="$1"; DST="$2"
+# 换成 rsync 语义:**改了才写,顺带删掉源里已经没有的**。前者省写入,后者顶替
+# 上游那个 rm -rf 的作用,所以不会留下旧版本的残留文件。
+#
+#   sync_smart <源目录> <目标目录> [prune]
+#
+# 判定顺序:先比字节数(一次 stat,不读内容)→ 大小相同才 cmp 比内容 → 两关都过才跳过。
+# 大小不同的在第一关就判定要写,不会白读一遍。读远比写便宜,也不伤寿命。
+# **一个文件都不会少装**,只是内容一样的不再重复写。
+#
+# ⚠️ prune(删掉目标里多余的文件)只能用于 MC2 独占的目录。
+#    /koolshare/bin、/koolshare/scripts、/koolshare/res、/koolshare/webs 是**所有插件共用**的,
+#    在那里 prune 会删掉别的插件的文件,直接把系统搞坏。
+sync_smart(){
+	SRC="$1"; DST="$2"; PRUNE="$3"
 	[ -d "$SRC" ] || return 0
 	mkdir -p "$DST" 2>/dev/null
-	CS_W=0; CS_S=0
+	CS_W=0; CS_S=0; CS_D=0
 	CS_OIFS="$IFS"; IFS='
 '
 	for rel in $(cd "$SRC" && find . -type f | sed 's|^\./||'); do
@@ -85,10 +95,23 @@ cp_smart(){
 			CS_S=$((CS_S+1)); continue
 		fi
 		mkdir -p "$(dirname "$cs_d")" 2>/dev/null
+		# 先 unlink 再写:正在运行的可执行文件不能被就地覆盖(ETXTBSY),但可以被
+		# unlink。这顶替了上游 `rm -rf /koolshare/bin/clash` 的作用,而且只对真正
+		# 要写的文件做。
+		rm -f "$cs_d" 2>/dev/null
 		cp -f "$cs_s" "$cs_d" && CS_W=$((CS_W+1))
 	done
+	if [ "$PRUNE" = "prune" ]; then
+		for rel in $(cd "$DST" && find . -type f | sed 's|^\./||'); do
+			[ -f "$SRC/$rel" ] || { rm -f "$DST/$rel" && CS_D=$((CS_D+1)); }
+		done
+	fi
 	IFS="$CS_OIFS"
-	echo_date "  $(basename "$SRC"): 写入 $CS_W 个,跳过 $CS_S 个未变化的文件"
+	if [ "$CS_D" -gt 0 ]; then
+		echo_date "  $(basename "$SRC"): 写入 $CS_W,跳过 $CS_S(未变化),清除 $CS_D(已废弃)"
+	else
+		echo_date "  $(basename "$SRC"): 写入 $CS_W,跳过 $CS_S(未变化)"
+	fi
 }
 
 platform_test(){
@@ -277,9 +300,10 @@ install_now(){
 	echo_date "清理旧文件"
 	rm -rf /koolshare/merlinclash/shanghai >/dev/null 2>&1
 	rm -rf /koolshare/merlinclash/version
-	rm -rf /koolshare/merlinclash/dashboard/
-	rm -rf /koolshare/bin/clash
-	rm -rf /koolshare/bin/yq
+	# rm -rf dashboard/ —— 去掉:sync_smart 会 prune 掉废弃文件,不必整个删了重写 13MB
+	# rm -rf /koolshare/bin/clash —— 去掉:sync_smart 写之前会自己 unlink(ETXTBSY 安全),
+	# 内容没变时连写都不用写(clash 单文件 10MB)
+	# rm -rf /koolshare/bin/yq —— 同上
 	rm -rf /koolshare/res/icon-merlinclash.png
 	rm -rf /koolshare/res/clash*
 	rm -rf /koolshare/res/merlinclash.css
@@ -291,7 +315,7 @@ install_now(){
 	rm -rf /koolshare/res/mac*.ipset >/dev/null 2>&1
 	rm -rf /tmp/upload/clash_* >/dev/null 2>&1
 	find /koolshare/init.d/ -name "*merlinclash*" | xargs rm -rf
-	rm -rf /koolshare/merlinclash/rule_configs
+	# rm -rf rule_configs —— 去掉:同 dashboard,由 sync_smart ... prune 保证不留旧文件
 	rm -rf /koolshare/merlinclash/conf
 	rm -rf /koolshare/webs/Module_merlinclash*
 	rm -rf /koolshare/scripts/clash*
@@ -357,12 +381,12 @@ install_now(){
 		if [ "${LINUX_VER}" != "44" ]; then
 			rm -rf /tmp/merlinclash/bin32/haveged
 		fi
-		cp_smart /tmp/merlinclash/bin32 /koolshare/bin
+		sync_smart /tmp/merlinclash/bin32 /koolshare/bin
 	else
-		cp_smart /tmp/merlinclash/bin64 /koolshare/bin
+		sync_smart /tmp/merlinclash/bin64 /koolshare/bin
 	fi
 	
-	cp_smart /tmp/merlinclash/conf /koolshare/merlinclash/conf
+	sync_smart /tmp/merlinclash/conf /koolshare/merlinclash/conf
 	cp -rf /tmp/merlinclash/clash/Shanghai /koolshare/merlinclash/
 	cp -rf /tmp/merlinclash/version /koolshare/merlinclash/
 
@@ -376,13 +400,13 @@ install_now(){
 		rm -rf /tmp/merlinclash/yaml_basic/head.yaml
 
 	fi
-	cp_smart /tmp/merlinclash/yaml_basic /koolshare/merlinclash/yaml_basic
+	sync_smart /tmp/merlinclash/yaml_basic /koolshare/merlinclash/yaml_basic
 	
 	if [ "${mcinstall}" != "1" ]; then
-		cp_smart /tmp/merlinclash/yaml_dns /koolshare/merlinclash/yaml_dns
+		sync_smart /tmp/merlinclash/yaml_dns /koolshare/merlinclash/yaml_dns
 	fi
-	  cp_smart /tmp/merlinclash/dashboard /koolshare/merlinclash/dashboard
-	  cp_smart /tmp/merlinclash/rule_configs /koolshare/merlinclash/rule_configs
+	  sync_smart /tmp/merlinclash/dashboard /koolshare/merlinclash/dashboard prune
+	  sync_smart /tmp/merlinclash/rule_configs /koolshare/merlinclash/rule_configs prune
 	#判断是否需要覆盖GeoSite  
 	geo_size=$(ls -l "$Geosite_PATH" 2>/dev/null | awk '{print $5}')
 	geoip_size=$(ls -l "$GeoIP_PATH" 2>/dev/null | awk '{print $5}')
@@ -398,13 +422,13 @@ install_now(){
 	fi
 
 	echo_date "复制相关脚本文件..."	
-	cp_smart /tmp/merlinclash/scripts /koolshare/scripts
+	sync_smart /tmp/merlinclash/scripts /koolshare/scripts
 	cp -rf /tmp/merlinclash/install.sh /koolshare/scripts/merlinclash_install.sh
 	cp -rf /tmp/merlinclash/uninstall.sh /koolshare/scripts/uninstall_merlinclash.sh
 
 	echo_date "复制相关网页文件..."	
-	cp_smart /tmp/merlinclash/webs /koolshare/webs
-	cp_smart /tmp/merlinclash/res /koolshare/res
+	sync_smart /tmp/merlinclash/webs /koolshare/webs
+	sync_smart /tmp/merlinclash/res /koolshare/res
 
 	echo_date "为新文件赋权..."	
 	chmod 755 /koolshare/bin/clash
