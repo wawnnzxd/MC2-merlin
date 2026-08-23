@@ -1,0 +1,1 @@
+import{A as e,v as t}from"./i18n-Cw7tJybH.js";import{Dt as n}from"./settings-DNj_5Pi6.js";e();var r=t(()=>(n.value,getComputedStyle(document.body).getPropertyValue(`color-scheme`).trim().split(/\s+/).includes(`dark`)?`dark`:`light`));export{r as t};

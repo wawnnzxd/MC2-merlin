@@ -1,0 +1,18 @@
+dns:
+  enable: true
+  ipv6: false
+  listen: :23453
+  enhanced-mode: redir-host
+  respect-rules: true
+  proxy-server-nameserver:
+    - 119.29.29.29
+    - 223.5.5.5
+  nameserver-policy:
+    "+.steampowered.com": "223.5.5.5"
+    "geosite: gfw":
+      - https://doh.dns.sb/dns-query 
+      - tls://8.8.8.8:853
+      - tls://unfiltered.adguard-dns.com
+  nameserver:
+    - https://doh.pub/dns-query
+    - 223.5.5.5

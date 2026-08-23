@@ -1,0 +1,80 @@
+#!/bin/sh
+
+source /koolshare/scripts/base.sh
+CONFIG=$1
+INDEX=$2
+eval `dbus export merlinclash`
+yamlpath=/koolshare/merlinclash/yaml_use/${merlinclash_set_yamlsel_start}.yaml
+dnslistenport=$(cat $yamlpath | awk -F: '/listen/{print $3}' | xargs echo -n)
+clash_process_started="0"
+
+detect_ip(){	
+	IPADDR=$1
+	regex_v4="\b(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[1-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[1-9])\b"
+	# regex_v6="(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))"
+	ckStep4=`echo $1 | egrep $regex_v4 | wc -l`
+	# ckStep6=`echo $1 | egrep $regex_v6 | wc -l`
+	if [ $ckStep4 -eq 0 ]; then
+		# if [ $ckStep6 -eq 0 ]; then
+		# 	return 1
+		# else
+		# 	return 6
+		# fi
+		return 1
+	else
+		return 4
+	fi
+}
+
+check_core(){
+	if [ "$(pidof clash)" ] && [ "$(netstat -anp | grep clash | head -n 5)" ]; then
+    	clash_process_started="1"
+	fi
+}
+
+perpare(){
+	if [ "${merlinclash_enable}" == "1" ] && [ "${clash_process_started}" = "1" ] && [ "${merlinclash_ipt_closeproxy_sw}" != "1" ];then
+		if [ "${merlinclash_ipt_proxyiot_sw}" == "1" ]; then
+			[ -n "$(cat ${CONFIG}|grep no-resolv)" ] && sed -i '/no-resolv/d' ${CONFIG}
+			[ -n "$(cat ${CONFIG}|grep servers-file)" ] && sed -i '/servers-file/d' ${CONFIG}
+			[ -n "$(cat ${CONFIG}|grep resolv-file)" ] && sed -i '/resolv-file/d' ${CONFIG}
+			[ -n "$(cat ${CONFIG}|grep dhcp-option-force=br1)" ] && sed -i '/dhcp-option-force=br1/d' ${CONFIG}
+			[ -n "$(cat ${CONFIG}|grep dhcp-option-force=br2)" ] && sed -i '/dhcp-option-force=br2/d' ${CONFIG}
+		elif [ "${CONFIG}" == "/etc/dnsmasq.conf" ]; then
+			[ -n "$(cat ${CONFIG}|grep no-resolv)" ] && sed -i '/no-resolv/d' ${CONFIG}
+			[ -n "$(cat ${CONFIG}|grep servers-file)" ] && sed -i '/servers-file/d' ${CONFIG}
+			[ -n "$(cat ${CONFIG}|grep resolv-file)" ] && sed -i '/resolv-file/d' ${CONFIG}
+			[ -n "$(cat ${CONFIG}|grep dhcp-option-force=br1)" ] && sed -i '/dhcp-option-force=br1/d' ${CONFIG}
+			[ -n "$(cat ${CONFIG}|grep dhcp-option-force=br2)" ] && sed -i '/dhcp-option-force=br2/d' ${CONFIG}
+		fi
+	fi
+	[ -n "$(cat ${CONFIG}|grep dhcp-script)" ] && sed -i '/dhcp-script/d' ${CONFIG}
+}
+
+use_plan(){	
+	if [ "${merlinclash_enable}" == "1" ] && [ "${clash_process_started}" = "1" ] && [ "${merlinclash_ipt_closeproxy_sw}" != "1" ];then
+		if [ "${merlinclash_ipt_proxyiot_sw}" == "1" ]; then
+			sed -i '$a no-resolv' ${CONFIG}
+			sed -i "\$a server=127.0.0.1#${dnslistenport}" ${CONFIG}
+		elif [ "${CONFIG}" == "/etc/dnsmasq.conf" ]; then
+			sed -i '$a no-resolv' ${CONFIG}
+			sed -i "\$a server=127.0.0.1#${dnslistenport}" ${CONFIG}
+			if [ "${merlinclash_dns_type}" == "fi" ]; then			
+				nameservers=$(cat /tmp/resolv.conf | awk -F " " '/nameserver/{print $2}')
+				for nameserver in $nameservers; do
+			    	detect_ip ${nameserver}
+					b=$?
+					if [ "$b" == "4" ]; then
+					#echo_date "为合法IPV4格式，进行处理" >> $LOG_FILE
+					echo "dhcp-option-force=br1,6,"${nameserver} >> ${CONFIG}
+				    echo "dhcp-option-force=br2,6,"${nameserver} >> ${CONFIG}
+					fi
+				done
+			fi
+		fi
+	fi	
+}
+
+check_core
+perpare
+use_plan

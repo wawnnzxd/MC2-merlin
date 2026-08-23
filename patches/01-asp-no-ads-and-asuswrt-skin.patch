@@ -1,0 +1,20 @@
+--- a/merlinclash/webs/Module_merlinclash.asp
++++ b/merlinclash/webs/Module_merlinclash.asp
+@@ -331,7 +331,7 @@
+ 				yaml_select();
+ 				// 获取相关状态
+ 				get_clash_status_front();
+-				notice_show();
++				//notice_show(); // MC2-merlin: 不拉取在线公告/广告(也省去对 raw.githubusercontent.com 的跨域请求)
+ 			}
+ 		});
+ 	}
+@@ -2592,7 +2592,7 @@
+ 	}
+ </script>
+ </head>
+-<body id="app" skin='<% nvram_get("sc_skin"); %>' onload="init();">
++<body id="app" skin='ASUSWRT' onload="init();"><!-- MC2-merlin: 固定梅林风格,不跟随固件 sc_skin;想跟随固件改回 <% nvram_get("sc_skin"); %> -->
+ 	<div id="TopBanner"></div>
+ 	<div id="Loading" class="popup_bg"></div>
+ 	<div id="LoadingBar" class="popup_bar_bg_ks" style="z-index: 200;" >

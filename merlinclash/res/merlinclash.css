@@ -1,0 +1,706 @@
+/* ============================================================================
+   Magic Catling 2 · merlinclash.css
+   Token-driven dark control-panel theme, 4 router skins (ASUSWRT/ROG/TUF/TS).
+   Loaded last on Module_merlinclash.asp — overrides router base CSS, scoped
+   to #app (the page <body id="app" skin="...">). Every functional hook of the
+   stock sheet (popup geometry, display/visibility states, image buttons) is
+   preserved byte-for-byte in effect; everything else is re-skinned.
+   Note: #rrggbbaa hex = color + alpha (e.g. #ffffff17 ≈ white @ 9%).
+   ============================================================================ */
+
+/* ---- 1. Design tokens -------------------------------------------------- */
+#app {
+	--mc-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Roboto, Arial, sans-serif;
+	--mc-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+	/* neutral dark surfaces */
+	--mc-frame: #131a1f;
+	--mc-frame-2: #0e151a;
+	--mc-surface: #1d262c;
+	--mc-surface-2: #26323a;
+	--mc-surface-hi: #2d3a43;
+	--mc-inset: #10171c;
+	--mc-border: #ffffff17;
+	--mc-border-soft: #ffffff0e;
+	--mc-border-hi: #ffffff29;
+	/* text */
+	--mc-text: #e9eef1;
+	--mc-text-dim: #a4b5bd;
+	--mc-text-faint: #6f828b;
+	/* semantic (carried from stock .FormTitle i/em/b coloring) */
+	--mc-amber: #ffce5c;
+	--mc-cyan: #58e6d8;
+	--mc-green: #5ce58a;
+	/* shape & depth */
+	--mc-r: 14px;
+	--mc-r-sm: 9px;
+	--mc-r-xs: 6px;
+	--mc-pill: 999px;
+	--mc-edge: inset 0 1px 0 #ffffff0a;                      /* top edge-light */
+	--mc-shadow-1: 0 1px 2px #00000059, 0 6px 18px #00000042;
+	--mc-shadow-2: 0 2px 6px #00000066, 0 14px 36px #00000057;
+	--mc-shadow-pop: 0 24px 70px #00000099, 0 6px 18px #00000073;
+	/* motion */
+	--mc-ease: cubic-bezier(.4, 0, .2, 1);
+	--mc-dur: .18s;
+	/* accent — default ASUSWRT teal; skins below remap ONLY these six */
+	--mc-accent: #25d0c0;
+	--mc-accent-2: #16b6d8;
+	--mc-accent-ink: #052420;
+	--mc-accent-soft: #25d0c024;
+	--mc-accent-line: #25d0c073;
+	--mc-accent-glow: #25d0c059;
+	color-scheme: dark;
+	scrollbar-color: #ffffff2e transparent;
+}
+#app[skin=ROG] {
+	--mc-accent: #ff3358;
+	--mc-accent-2: #d20a3c;
+	--mc-accent-ink: #24010a;
+	--mc-accent-soft: #ff335826;
+	--mc-accent-line: #ff335880;
+	--mc-accent-glow: #ff33586b;
+}
+#app[skin=TUF] {
+	--mc-accent: #ffb02e;
+	--mc-accent-2: #ff8a00;
+	--mc-accent-ink: #241600;
+	--mc-accent-soft: #ffb02e26;
+	--mc-accent-line: #ffb02e80;
+	--mc-accent-glow: #ffb02e66;
+}
+#app[skin=TS] {
+	--mc-accent: #2fe0a6;
+	--mc-accent-2: #15c4c4;
+	--mc-accent-ink: #04231a;
+	--mc-accent-soft: #2fe0a626;
+	--mc-accent-line: #2fe0a67a;
+	--mc-accent-glow: #2fe0a65c;
+}
+
+/* ---- 2. Base ------------------------------------------------------------ */
+#app, #app input, #app select, #app textarea, #app button { font-family: var(--mc-font-ui); }
+#app { -webkit-font-smoothing: antialiased; }
+#app ::selection { background: var(--mc-accent); color: var(--mc-accent-ink); }
+#app input, #app textarea { caret-color: var(--mc-accent); }
+#app label { cursor: pointer; }
+
+/* ---- 3. Outer frame (#FormTitle card) ----------------------------------- */
+#app .FormTitle { table-layout: fixed; }
+#app #FormTitle {
+	border-collapse: separate;
+	border-spacing: 0;
+	border: 1px solid var(--mc-border);
+	border-radius: var(--mc-r);
+	background:
+		radial-gradient(1200px 240px at 18% -8%, var(--mc-accent-soft), transparent 60%),
+		linear-gradient(180deg, var(--mc-frame), var(--mc-frame-2));
+	box-shadow: var(--mc-shadow-2), var(--mc-edge);
+}
+#app #FormTitle > tbody > tr > td {
+	background: transparent !important;
+	padding: 22px 24px 26px !important;
+}
+#app .formfonttitle {
+	font-family: var(--mc-font-ui);
+	font-size: 23px;
+	font-weight: 700;
+	letter-spacing: .2px;
+	line-height: 1.2;
+	color: var(--mc-text);
+	padding-left: 14px;
+	position: relative;
+}
+#app .formfonttitle::before {
+	content: "";
+	position: absolute;
+	left: 0; top: 50%;
+	transform: translateY(-50%);
+	width: 5px; height: 1.05em;
+	border-radius: var(--mc-pill);
+	background: linear-gradient(180deg, var(--mc-accent), var(--mc-accent-2));
+	box-shadow: 0 0 14px var(--mc-accent-glow);
+}
+/* [skin] attr bumps specificity to (1,2,0): softcenter.css ships
+   #app[skin=X] rules for .splitLine/.ks_btn that outrank plain #app ones */
+#app[skin] .splitLine {
+	height: 1px;
+	border: 0;
+	background: linear-gradient(90deg, var(--mc-accent-line), var(--mc-border) 42%, transparent);
+	margin: 14px 0 16px !important;
+}
+
+/* ---- 4. Notes & hints ----------------------------------------------------
+   The page reuses .SimpleNote in two roles: the header notice box (direct
+   child of the #FormTitle td) AND as float/table-cell layout shims inside
+   FormTable cells. Only the header gets the boxed look; the shims must stay
+   geometry-neutral or fixed-width float layouts wrap. */
+#app #FormTitle > tbody > tr > td > .SimpleNote {
+	padding: 12px 14px !important;
+	font-size: 13px;
+	line-height: 1.7;
+	color: var(--mc-text-dim);
+	background: linear-gradient(135deg, var(--mc-accent-soft), transparent 80%);
+	border: 1px solid var(--mc-border-soft);
+	border-left: 3px solid var(--mc-accent);
+	border-radius: var(--mc-r-sm);
+}
+#app .FormTable .SimpleNote, #app .FormTable_table .SimpleNote {
+	/* neutralize the stock float/table-cell + fixed width/height + negative
+	   margin hacks: normal flow never overlaps, clips labels, or wraps mid-word */
+	float: none !important;
+	display: block !important;
+	width: auto !important;
+	height: auto !important;
+	line-height: 2 !important;
+	margin: 4px 0 !important;
+	padding: 0 !important;
+	background: none;
+	border: 0;
+	border-radius: 0;
+}
+#app .FormTable .SimpleNote > .ks_btn { margin: 2px 8px !important; }
+#app .SimpleNote p { margin: 2px 0; }
+#app .SimpleNote p:empty { display: none; }
+#app .SimpleNote a { color: var(--mc-accent); text-decoration: none; }
+#app .SimpleNote a:hover { text-decoration: underline; }
+#app .FormTitle i,  #app .SimpleNote i  { color: var(--mc-amber); font-style: normal; }
+#app .FormTitle em, #app .SimpleNote em { color: var(--mc-cyan);  font-style: normal; font-weight: 600; }
+#app .FormTitle b,  #app .SimpleNote b  { color: var(--mc-green); font-style: normal; font-weight: 500; }
+#app .hintstyle, #app a.hintstyle {
+	color: var(--mc-text);
+	text-decoration: none;
+	border-bottom: 1px dashed var(--mc-accent-line);
+	cursor: pointer;
+	transition: color var(--mc-dur) var(--mc-ease), border-color var(--mc-dur) var(--mc-ease);
+}
+#app .hintstyle:hover { color: var(--mc-accent); border-bottom-color: var(--mc-accent); }
+
+/* ---- 5. Cards (table.FormTable / table.FormTable_table) ------------------
+   table.* keeps the card skin off the one <tr class="FormTable_table"> row
+   used as a plain header row in the subscription-link list. */
+#app table.FormTable, #app table.FormTable_table {
+	width: 100% !important;
+	margin: 14px 0 0 !important;
+	border-collapse: separate !important;
+	border-spacing: 0 !important;
+	border: 1px solid var(--mc-border) !important;
+	border-radius: var(--mc-r-sm);
+	background: var(--mc-surface);
+	box-shadow: var(--mc-shadow-1), var(--mc-edge);
+	outline: none !important;
+	overflow: hidden;
+	font-size: 13px;
+}
+#app .FormTable thead td, #app .FormTable_table thead td,
+#app .FormTable thead th, #app .FormTable_table thead th {
+	background: linear-gradient(180deg, var(--mc-surface-2), var(--mc-surface)) !important;
+	color: var(--mc-text) !important;
+	font-weight: 700;
+	font-size: 13px;
+	letter-spacing: .4px;
+	text-align: left;
+	padding: 12px 16px !important;
+	border: 0 !important;
+	border-bottom: 1px solid var(--mc-border) !important;
+	position: relative;
+}
+#app .FormTable thead td::before, #app .FormTable_table thead td::before {
+	content: "";
+	position: absolute;
+	left: 0; top: 50%;
+	transform: translateY(-50%);
+	width: 3px; height: 14px;
+	border-radius: var(--mc-pill);
+	background: linear-gradient(180deg, var(--mc-accent), var(--mc-accent-2));
+}
+#app .FormTable th, #app .FormTable_table th {
+	background: transparent !important;
+	color: var(--mc-text-dim) !important;
+	font-weight: 600;
+	font-size: 13px;
+	text-align: left;
+	vertical-align: middle;
+	padding: 13px 16px !important;
+	border: 0 !important;
+	border-bottom: 1px solid var(--mc-border-soft) !important;
+}
+/* label column must not collapse to one-char-per-line when the value cell
+   is stuffed with wide floats; fused list headers keep their % widths */
+#app .FormTable > tbody > tr > th { min-width: 110px; }
+#app .FormTable td, #app .FormTable_table td {
+	background: transparent !important;
+	color: var(--mc-text);
+	vertical-align: middle;
+	padding: 11px 16px !important;
+	border: 0 !important;
+	border-bottom: 1px solid var(--mc-border-soft) !important;
+	line-height: 1.6;
+}
+#app .FormTable tr:last-child th, #app .FormTable tr:last-child td,
+#app .FormTable_table tr:last-child th, #app .FormTable_table tr:last-child td { border-bottom: 0 !important; }
+#app .FormTable tbody tr, #app .FormTable_table tbody tr { transition: background var(--mc-dur) var(--mc-ease); }
+#app .FormTable tbody tr:hover, #app .FormTable_table tbody tr:hover { background: #ffffff06; }
+#app .sp_bottom_line { border-bottom: 1px solid var(--mc-border-soft) !important; }
+
+/* List tables (.list_table — ACL rule rows). On the stock sheet these are
+   750px-wide twins of the header table above them; 100% keeps the columns
+   aligned now that the card padding is wider. */
+#app .list_table {
+	width: 100% !important;
+	border: none;
+	border-collapse: collapse;
+	background: transparent;
+	text-align: center;
+	font-size: 12.5px;
+	table-layout: fixed;
+}
+#app .list_table tr { height: 38px; }
+#app .list_table td {
+	border: 0;
+	border-bottom: 1px solid var(--mc-border-soft);
+	font-family: var(--mc-font-mono);
+	color: var(--mc-text-dim);
+	height: 30px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+#app .list_table tr:hover td { color: var(--mc-text); }
+/* fused header-card + rows pair (访问控制 lists): square the junction and
+   wrap the rows half in the same card shell */
+#app table.FormTable_table.acl_lists, #app table.FormTable_table.nokpacl_lists {
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
+	border-bottom: 0 !important;
+}
+#app table.list_table.acl_lists, #app table.list_table.nokpacl_lists {
+	background: var(--mc-surface);
+	border: 1px solid var(--mc-border) !important;
+	border-top: 0 !important;
+	border-radius: 0 0 var(--mc-r-sm) var(--mc-r-sm);
+	box-shadow: var(--mc-shadow-1);
+}
+#app .list_table.acl_lists td, #app .list_table.nokpacl_lists td { padding: 6px 8px; }
+
+/* ---- 6. Tab bar (#tablets · .show-btn0–10 · .sub-node1/2 · .active) ------ */
+#app #tablets table { width: 100% !important; height: auto !important; }
+#app #tablets td {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+	padding: 5px !important;
+	border: 1px solid var(--mc-border) !important;
+	border-radius: var(--mc-pill);
+	background: var(--mc-frame-2);
+	box-shadow: inset 0 1px 3px #00000059, 0 1px 0 #ffffff08;
+}
+#app input[class*=show-btn], #app .sub-node1, #app .sub-node2 {
+	-webkit-appearance: none;
+	appearance: none;
+	flex: 1 1 0;
+	width: auto !important;
+	min-width: 60px;
+	font-family: var(--mc-font-ui);
+	font-size: 13px;
+	font-weight: 600;
+	white-space: nowrap;
+	color: var(--mc-text-dim);
+	padding: 9px 6px !important;
+	border: 1px solid transparent !important;
+	border-radius: var(--mc-pill) !important;
+	background: transparent !important;
+	cursor: pointer;
+	transition: color var(--mc-dur) var(--mc-ease), background var(--mc-dur) var(--mc-ease),
+		box-shadow var(--mc-dur) var(--mc-ease), transform var(--mc-dur) var(--mc-ease);
+}
+#app input[class*=show-btn]:hover, #app .sub-node1:hover, #app .sub-node2:hover {
+	color: var(--mc-text);
+	background: #ffffff0d !important;
+}
+#app input[class*=show-btn]:active, #app .sub-node1:active, #app .sub-node2:active { transform: translateY(1px); }
+#app input[class*=show-btn].active, #app .sub-node1.active, #app .sub-node2.active, #app .active {
+	color: var(--mc-accent-ink) !important;
+	background: linear-gradient(180deg, var(--mc-accent), var(--mc-accent-2)) !important;
+	border-color: transparent !important;
+	box-shadow: 0 4px 14px var(--mc-accent-glow), inset 0 1px 0 #ffffff40;
+}
+#app [id^=tablet_] { margin: 14px 0 0 !important; border: none !important; }
+
+/* ---- 7. Buttons ----------------------------------------------------------- */
+/* softcenter.css ships #app[skin=X] .ks_btn{width:14%;font-size:10pt;…} and a
+   matching :hover at (1,2,1) — our selectors carry [skin] and the :hover rule
+   restates the geometry, so neither tier can squeeze the pills */
+#app[skin] .ks_btn, #app[skin] a.ks_btn {
+	-webkit-appearance: none;
+	appearance: none;
+	display: inline-block;
+	width: auto;
+	font-family: var(--mc-font-ui);
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1;
+	color: var(--mc-accent);
+	text-decoration: none;
+	white-space: nowrap;
+	padding: 8px 13px;
+	border: 1px solid var(--mc-accent-line);
+	border-radius: var(--mc-pill);
+	background: var(--mc-accent-soft);
+	cursor: pointer;
+	transition: color var(--mc-dur) var(--mc-ease), background var(--mc-dur) var(--mc-ease),
+		border-color var(--mc-dur) var(--mc-ease), box-shadow var(--mc-dur) var(--mc-ease),
+		transform var(--mc-dur) var(--mc-ease);
+}
+#app[skin] .ks_btn:hover, #app[skin] a.ks_btn:hover {
+	width: auto;
+	padding: 8px 13px;
+	font-size: 13px;
+	border-radius: var(--mc-pill);   /* softcenter's hover tier resets it to 5px */
+	color: var(--mc-accent-ink);
+	background: linear-gradient(180deg, var(--mc-accent), var(--mc-accent-2));
+	border-color: transparent;
+	box-shadow: 0 6px 18px var(--mc-accent-glow);
+	transform: translateY(-1px);
+}
+#app[skin] .ks_btn:active, #app[skin] a.ks_btn:active { transform: translateY(0); box-shadow: 0 2px 8px var(--mc-accent-glow); }
+/* header status row: 重启&保存/详细状态 live in position:absolute divs with
+   hard-coded margin-left 300/380px (~80px apart) whose shrink-to-fit would
+   squeeze the pills — max-content + compact metrics; (1,3,1) outranks both
+   hover tiers so the geometry holds on hover too */
+#app[skin] td > div[style*="absolute"] .ks_btn { padding: 7px 10px; font-size: 12px; width: max-content; }
+/* …and in :has()-capable browsers, retire the absolute hack entirely:
+   flex row — switch + version on the left, button pair on the right */
+#app[skin] td:has(> div[style*="absolute"] > .ks_btn) {
+	display: flex !important;
+	align-items: center !important;
+	gap: 10px;
+}
+#app[skin] td:has(> div[style*="absolute"] > .ks_btn) > div {
+	position: static !important;
+	float: none !important;
+	margin: 0 !important;
+	padding: 0 !important;
+}
+#app[skin] td:has(> div[style*="absolute"] > .ks_btn) > div:nth-of-type(2) { margin-right: auto !important; }
+#app .button_gen, #app input.button_gen {
+	-webkit-appearance: none;
+	appearance: none;
+	font-family: var(--mc-font-ui);
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: .3px;
+	color: var(--mc-accent-ink);
+	padding: 10px 22px;
+	border: 0;
+	border-radius: var(--mc-pill);
+	background: linear-gradient(180deg, var(--mc-accent), var(--mc-accent-2));
+	box-shadow: 0 4px 14px var(--mc-accent-glow), inset 0 1px 0 #ffffff40;
+	cursor: pointer;
+	transition: filter var(--mc-dur) var(--mc-ease), box-shadow var(--mc-dur) var(--mc-ease),
+		transform var(--mc-dur) var(--mc-ease);
+}
+#app .button_gen:hover, #app input.button_gen:hover {
+	filter: brightness(1.07);
+	transform: translateY(-1px);
+	box-shadow: 0 8px 22px var(--mc-accent-glow), inset 0 1px 0 #ffffff40;
+}
+#app .button_gen:active, #app input.button_gen:active { transform: translateY(0); }
+#app .apply_gen { text-align: center; margin: 14px 0; background: transparent !important; }
+#app .merlinclash-btn-container { display: flex; flex-direction: column; gap: 4px; }
+#app .merlinclash-btn-container p { color: var(--mc-text-faint); font-size: 12px; }
+#app .button-add {
+	font-family: var(--mc-font-ui);
+	font-size: 12.5px;
+	font-weight: 600;
+	height: 32px;
+	padding: 0 12px;
+	vertical-align: middle;
+	background: var(--mc-accent-soft);
+	color: var(--mc-accent);
+	border: 1px solid var(--mc-accent-line);
+	border-radius: var(--mc-r-xs);
+	cursor: pointer;
+	transition: color var(--mc-dur) var(--mc-ease), background var(--mc-dur) var(--mc-ease);
+}
+#app .button-add:hover { color: var(--mc-accent-ink); background: var(--mc-accent); }
+/* image-hook buttons — URLs must stay exactly as the stock sheet (31×31 PNGs) */
+#app .remove_btn { background: transparent url(/res/accountdelete.png) no-repeat scroll center top; cursor: pointer; width: 31px; height: 31px; border: 0; padding: 0; }
+#app .add_btn    { background: transparent url(/res/accountadd.png)    no-repeat scroll center top; cursor: pointer; width: 31px; height: 31px; border: 0; padding: 0; }
+
+/* ---- 8. Inputs & selects --------------------------------------------------- */
+#app .input_option, #app select.input_option, #app .sel_option, #app select {
+	box-sizing: border-box;
+	font-family: var(--mc-font-ui);
+	font-size: 13px;
+	color: var(--mc-text);
+	height: 34px;
+	padding: 0 10px;
+	border: 1px solid var(--mc-border-hi);
+	border-radius: var(--mc-r-sm);
+	background: var(--mc-inset);
+	outline: none;
+	vertical-align: middle;
+	transition: border-color var(--mc-dur) var(--mc-ease), box-shadow var(--mc-dur) var(--mc-ease),
+		background var(--mc-dur) var(--mc-ease);
+}
+#app .sel_option { text-align: center; text-align-last: center; }
+#app .input_option:hover, #app .sel_option:hover, #app select:hover { border-color: var(--mc-accent-line); }
+#app .input_option:focus, #app .sel_option:focus, #app select:focus {
+	border-color: var(--mc-accent);
+	box-shadow: 0 0 0 3px var(--mc-accent-glow);
+}
+/* stock text fields (.input_6/15/25_table) — inline widths in the markup were
+   tuned for the stock ~5px-padding content-box; border-box keeps every
+   width:NNpx exactly NN so tight cells (110px IP + pull_arrow…) never wrap */
+#app .input_6_table, #app .input_15_table, #app .input_25_table {
+	box-sizing: border-box;
+	font-family: var(--mc-font-mono);
+	font-size: 12.5px;
+	color: var(--mc-text);
+	height: 30px;
+	padding: 0 8px;
+	border: 1px solid var(--mc-border-hi);
+	border-radius: var(--mc-r-xs);
+	background: var(--mc-inset);
+	outline: none;
+	vertical-align: middle;
+	transition: border-color var(--mc-dur) var(--mc-ease), box-shadow var(--mc-dur) var(--mc-ease);
+}
+#app .input_6_table:hover, #app .input_15_table:hover, #app .input_25_table:hover { border-color: var(--mc-accent-line); }
+#app .input_6_table:focus, #app .input_15_table:focus, #app .input_25_table:focus {
+	border-color: var(--mc-accent);
+	box-shadow: 0 0 0 3px var(--mc-accent-glow);
+}
+#app .input_6_table::placeholder, #app .input_15_table::placeholder, #app .input_25_table::placeholder { color: var(--mc-text-faint); }
+/* ghost "editable cell" fields — width is a default, NOT min-width: the page
+   narrows these inline (width:100px port cells etc.) and must stay narrow */
+#app .input_option_2 {
+	box-sizing: border-box;
+	font-family: var(--mc-font-mono);
+	font-size: 13px;
+	color: var(--mc-text);
+	height: 30px;
+	width: 152px;
+	margin-left: 2px;
+	padding: 0 8px;
+	text-align: center;
+	border: 1px solid var(--mc-border-soft);
+	border-radius: var(--mc-r-xs);
+	background: transparent;
+	outline: none;
+	vertical-align: middle;
+	transition: border-color var(--mc-dur) var(--mc-ease), background var(--mc-dur) var(--mc-ease),
+		box-shadow var(--mc-dur) var(--mc-ease);
+}
+#app .input_option_2:hover, #app .input_option_2:focus {
+	border-color: var(--mc-accent-line);
+	background: var(--mc-inset);
+	box-shadow: 0 0 0 3px var(--mc-accent-glow);
+}
+#app .mc_outline { outline: 1px solid var(--mc-border-hi); border-radius: var(--mc-r-xs); }
+#app input[type=button]:focus { outline: none; }
+#app input[type=checkbox], #app input[type=radio] { vertical-align: middle; accent-color: var(--mc-accent); }
+/* native file pickers (配置上传 / 内核更新 / 恢复备份) */
+#app input[type=file] { color: var(--mc-text-dim); font-size: 12.5px; }
+#app input[type=file]::file-selector-button {
+	font-family: var(--mc-font-ui);
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--mc-text-dim);
+	padding: 6px 12px;
+	margin-right: 10px;
+	border: 1px solid var(--mc-border-hi);
+	border-radius: var(--mc-pill);
+	background: var(--mc-surface-2);
+	cursor: pointer;
+	transition: color var(--mc-dur) var(--mc-ease), border-color var(--mc-dur) var(--mc-ease);
+}
+#app input[type=file]::file-selector-button:hover { color: var(--mc-accent); border-color: var(--mc-accent-line); }
+/* the page hard-codes label color:gold in several rows — retint to the theme */
+#app [style*="gold"] { color: var(--mc-amber) !important; }
+
+/* ---- 9. Textareas (configs, logs, link boxes) ------------------------------ */
+#app textarea {
+	box-sizing: border-box;
+	width: 97%;
+	font-family: var(--mc-font-mono) !important;
+	font-size: 12.5px !important;
+	line-height: 1.6 !important;
+	color: var(--mc-text);
+	padding: 12px 14px;
+	border: 1px solid var(--mc-border) !important;
+	border-radius: var(--mc-r-sm);
+	background: var(--mc-inset) !important;
+	outline: none;
+	overflow-x: hidden;
+	resize: vertical;
+	scrollbar-width: thin;
+	transition: border-color var(--mc-dur) var(--mc-ease), box-shadow var(--mc-dur) var(--mc-ease);
+}
+#app textarea:focus { border-color: var(--mc-accent) !important; box-shadow: 0 0 0 3px var(--mc-accent-glow); }
+#app #merlinclash_links, #app #merlinclash_links2, #app #merlinclash_sub_links {
+	resize: none;
+	height: 100px;
+	width: 440px;
+	padding: 10px 12px;
+	line-height: 1.45 !important;
+	word-break: break-all;
+	font-size: 11.5px !important;
+}
+#app #log_content3, #app #loading_block2 { line-height: 1.55; }
+
+/* ---- 10. Toggle switches — FULL geometry takeover ---------------------------
+   Stock firmware switches vary wildly (ROG: 50×30 square block + 26px knob with
+   a blue ✓ SVG inside). Owning the geometry outright gives every skin the same
+   50×26 pill; !important beats the firmware base CSS on each box property. */
+#app .switch_field { display: inline-flex; align-items: center; }
+#app .switch_field label { position: relative; }
+#app[skin] .switch_container {
+	position: relative !important;
+	display: inline-block !important;
+	box-sizing: border-box !important;
+	width: 50px !important;
+	height: 26px !important;
+	border-radius: var(--mc-pill) !important;
+	border: 1px solid var(--mc-border-hi) !important;
+	background: var(--mc-surface-2) !important;
+	overflow: hidden !important;
+	vertical-align: middle !important;
+	cursor: pointer;
+	transition: background var(--mc-dur) var(--mc-ease), border-color var(--mc-dur) var(--mc-ease),
+		box-shadow var(--mc-dur) var(--mc-ease);
+}
+#app[skin] .switch_bar {
+	position: absolute !important;
+	inset: 0 !important;
+	width: auto !important;
+	height: auto !important;
+	margin: 0 !important;
+	border-radius: var(--mc-pill) !important;
+	background: transparent !important;
+	box-shadow: none !important;
+}
+#app[skin] .switch_circle {
+	position: absolute !important;
+	top: 2px !important;
+	left: 2px !important;
+	width: 20px !important;
+	height: 20px !important;
+	margin: 0 !important;
+	border-radius: 50% !important;
+	background: #fff !important;
+	box-shadow: 0 1px 3px #00000080 !important;
+	transition: left var(--mc-dur) var(--mc-ease) !important;
+}
+#app[skin] .switch_circle > div { display: none !important; }   /* firmware ✓/✕ icon */
+#app[skin] .switch:checked + .switch_container, #app[skin] .switch:checked ~ .switch_container {
+	background: linear-gradient(180deg, var(--mc-accent), var(--mc-accent-2)) !important;
+	border-color: var(--mc-accent) !important;
+	box-shadow: 0 0 12px var(--mc-accent-glow);
+}
+#app[skin] .switch:checked + .switch_container .switch_circle,
+#app[skin] .switch:checked ~ .switch_container .switch_circle { left: 26px !important; }
+#app .switch:focus-visible + .switch_container, #app .switch:focus-visible ~ .switch_container {
+	box-shadow: 0 0 0 3px var(--mc-accent-glow);
+	border-radius: var(--mc-pill);
+}
+
+/* ---- 11. Popups & overlays (geometry identical to the stock sheet) --------- */
+#app .popup_bar_bg_ks {
+	position: fixed;
+	top: 0; left: 0;
+	width: 100%; height: 100%;
+	z-index: 99;
+	background: #080c0ed1;
+	-webkit-backdrop-filter: blur(3px);
+	backdrop-filter: blur(3px);
+	visibility: hidden;
+	overflow: hidden;
+}
+#app .popup_bg {
+	background: #080c0ed1 !important;
+	-webkit-backdrop-filter: blur(3px);
+	backdrop-filter: blur(3px);
+}
+#app .loadingBarBlock {
+	background: var(--mc-surface) !important;
+	border: 1px solid var(--mc-border) !important;
+	border-radius: var(--mc-r);
+	box-shadow: var(--mc-shadow-pop) !important;
+}
+#app .contentM_qis, #app .contentMKP_qis, #app .content_status {
+	border-radius: var(--mc-r);
+	border: 1px solid var(--mc-border-hi);
+	background: #182025eb !important;
+	-webkit-backdrop-filter: blur(14px) saturate(1.2);
+	backdrop-filter: blur(14px) saturate(1.2);
+	box-shadow: var(--mc-shadow-pop) !important;
+	display: none;
+}
+#app .contentM_qis  { position: absolute; z-index: 200; margin-left: 50px;   top: 320px; width: 650px; }
+#app .contentMKP_qis{ position: sticky;   z-index: 10;  margin-left: -215px; top: 240px; width: 980px; }
+#app .content_status{ position: absolute; z-index: 10;  margin-left: -215px; top: 240px; width: 980px; }
+#app .user_title {
+	text-align: center;
+	font-size: 17px;
+	font-weight: 700;
+	letter-spacing: .3px;
+	color: var(--mc-accent);
+	padding: 16px 10px 12px;
+	margin: 0 16px 6px;
+	border-bottom: 1px solid var(--mc-border);
+}
+
+/* ---- 12. Client-list dropdown (访问控制 IP picker) -------------------------- */
+/* inline margin-top:25px assumed the stock 23px input; ours is 30px tall */
+#app #nokpClientList_Block { margin-top: 34px !important; }
+#app #pull_arrow { vertical-align: middle; cursor: pointer; }
+#app .clientlist_dropdown {
+	background: var(--mc-surface-2) !important;
+	border: 1px solid var(--mc-border-hi);
+	border-radius: var(--mc-r-sm);
+	box-shadow: var(--mc-shadow-2);
+	overflow: hidden auto;
+	max-height: 260px;
+}
+#app .clientlist_dropdown a { color: var(--mc-text-dim); text-decoration: none; }
+#app .clientlist_dropdown a div { transition: background var(--mc-dur) var(--mc-ease); }
+#app .clientlist_dropdown a:hover div { background: var(--mc-surface-hi); color: var(--mc-text); }
+
+/* ---- 13. Badges & misc ------------------------------------------------------ */
+#app .ip-title {
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: .3px;
+	color: var(--mc-accent);
+	padding: 1px 8px;
+	border: 1px solid var(--mc-accent-line);
+	border-radius: var(--mc-pill);
+	background: var(--mc-accent-soft);
+}
+#app .submenuBlock { margin-bottom: 6px; }
+
+/* ---- 14. Scrollbars (every scrollable surface in the module) ---------------- */
+#app::-webkit-scrollbar, #app ::-webkit-scrollbar { width: 9px; height: 9px; }
+#app::-webkit-scrollbar-thumb, #app ::-webkit-scrollbar-thumb {
+	border-radius: var(--mc-pill);
+	background-color: #ffffff29;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+#app::-webkit-scrollbar-thumb:hover, #app ::-webkit-scrollbar-thumb:hover { background-color: var(--mc-accent-line); }
+#app::-webkit-scrollbar-track, #app ::-webkit-scrollbar-track { background-color: transparent; }
+
+/* ---- 15. Accessibility ------------------------------------------------------- */
+#app a:focus-visible, #app button:focus-visible, #app input:focus-visible,
+#app select:focus-visible, #app textarea:focus-visible {
+	outline: 2px solid var(--mc-accent);
+	outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+	#app *, #app *::before, #app *::after {
+		transition-duration: .001ms !important;
+		animation-duration: .001ms !important;
+	}
+}

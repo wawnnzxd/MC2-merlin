@@ -1,0 +1,4 @@
+.DS_Store
+*.orig
+# 打包产物走 GitHub Releases,不进 git 历史(每版 20MB 二进制会让仓库迅速膨胀)
+packages/*.tar.gz
