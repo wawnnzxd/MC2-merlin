@@ -61,6 +61,19 @@ fuck_bug(){
 		exit_install 2
 	fi
 }
+# MC2-merlin: 自更新用的"瘦包"只带 scripts/webs/res/version(~600KB),不带
+# bin64(11M)和 dashboard(13M)—— 那两样逐版没变过,每次重传+重写回 U 盘纯属浪费。
+# 但瘦包**不能**用来全新安装:没有 mihomo 二进制装完就是个空壳。
+slim_guard(){
+	if [ ! -d /tmp/merlinclash/bin64 ] && [ ! -d /tmp/merlinclash/bin32 ]; then
+		if [ ! -x /koolshare/bin/clash ]; then
+			echo_date "这是增量(slim)包,只能用于升级已安装的 MC2。"
+			echo_date "本机没有检测到 /koolshare/bin/clash,请改用完整包安装。"
+			exit_install 1
+		fi
+		echo_date "增量包:跳过 mihomo 内核与面板(沿用本机现有文件)"
+	fi
+}
 platform_test(){
 	# 带koolshare文件夹，有httpdb和skipdb的固件位支持固件
 	if [ -d "/koolshare" -a -x "/koolshare/bin/httpdb" -a -x "/usr/bin/skipd" ];then
@@ -327,13 +340,13 @@ install_now(){
 		if [ "${LINUX_VER}" != "44" ]; then
 			rm -rf /tmp/merlinclash/bin32/haveged
 		fi
-		cp -rf /tmp/merlinclash/bin32/* /koolshare/bin/
+		[ -d /tmp/merlinclash/bin32 ] && cp -rf /tmp/merlinclash/bin32/* /koolshare/bin/
 	else
-		cp -rf /tmp/merlinclash/bin64/* /koolshare/bin/
+		[ -d /tmp/merlinclash/bin64 ] && cp -rf /tmp/merlinclash/bin64/* /koolshare/bin/
 	fi
 	
-	cp -rf /tmp/merlinclash/conf/* /koolshare/merlinclash/conf/
-	cp -rf /tmp/merlinclash/clash/Shanghai /koolshare/merlinclash/
+	[ -d /tmp/merlinclash/conf ] && cp -rf /tmp/merlinclash/conf/* /koolshare/merlinclash/conf/
+	[ -f /tmp/merlinclash/clash/Shanghai ] && cp -rf /tmp/merlinclash/clash/Shanghai /koolshare/merlinclash/
 	cp -rf /tmp/merlinclash/version /koolshare/merlinclash/
 
 	if [ "${mcinstall}" == "1" ]; then
@@ -346,25 +359,25 @@ install_now(){
 		rm -rf /tmp/merlinclash/yaml_basic/head.yaml
 
 	fi
-	cp -rf /tmp/merlinclash/yaml_basic/* /koolshare/merlinclash/yaml_basic/
+	[ -d /tmp/merlinclash/yaml_basic ] && cp -rf /tmp/merlinclash/yaml_basic/* /koolshare/merlinclash/yaml_basic/
 	
 	if [ "${mcinstall}" != "1" ]; then
-		cp -rf /tmp/merlinclash/yaml_dns/* /koolshare/merlinclash/yaml_dns/
+		[ -d /tmp/merlinclash/yaml_dns ] && cp -rf /tmp/merlinclash/yaml_dns/* /koolshare/merlinclash/yaml_dns/
 	fi
-	  cp -rf /tmp/merlinclash/dashboard/* /koolshare/merlinclash/dashboard/
-	  cp -rf /tmp/merlinclash/rule_configs/* /koolshare/merlinclash/rule_configs/
+	  [ -d /tmp/merlinclash/dashboard ] && cp -rf /tmp/merlinclash/dashboard/* /koolshare/merlinclash/dashboard/
+	  [ -d /tmp/merlinclash/rule_configs ] && cp -rf /tmp/merlinclash/rule_configs/* /koolshare/merlinclash/rule_configs/
 	#判断是否需要覆盖GeoSite  
 	geo_size=$(ls -l "$Geosite_PATH" 2>/dev/null | awk '{print $5}')
 	geoip_size=$(ls -l "$GeoIP_PATH" 2>/dev/null | awk '{print $5}')
 	if [ -f "$Geosite_PATH" ] && [ "$geo_size" -gt 1000000 ]; then
 		echo_date "已经存在GeoSite.dat文件，略过"
 	else
-		cp -rf /tmp/merlinclash/clash/GeoSite.dat /koolshare/merlinclash/
+		[ -f /tmp/merlinclash/clash/GeoSite.dat ] && cp -rf /tmp/merlinclash/clash/GeoSite.dat /koolshare/merlinclash/
 	fi
 	if [ -f "$GeoIP_PATH" ] && [ "$geoip_size" -gt 1000000 ]; then
 		echo_date "已经存在GeoIP.dat文件，略过"
 	else
-		cp -rf /tmp/merlinclash/clash/GeoIP.dat /koolshare/merlinclash/
+		[ -f /tmp/merlinclash/clash/GeoIP.dat ] && cp -rf /tmp/merlinclash/clash/GeoIP.dat /koolshare/merlinclash/
 	fi
 
 	echo_date "复制相关脚本文件..."	
@@ -474,6 +487,7 @@ install(){
 	get_model
 	get_fw_type
 	platform_test
+	slim_guard
 	fuck_bug
 	install_now
 }

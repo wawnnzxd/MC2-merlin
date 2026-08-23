@@ -6,73 +6,126 @@
 #   我们的定制版推在自己的 GitHub(wawnnzxd/MC2-merlin),软件中心永远不知道。
 #   本脚本让插件页面自己检查自己的仓库,有新版就提示,点一下直接装。
 #
-# 用法(由前端经 /_api/ 调用,$1=请求ID 由 base.sh 接住):
-#   clash_selfupdate.sh <id> check     → 写 merlinclash_selfupdate_* 几个 dbus 键,前端读
-#   clash_selfupdate.sh <id> install   → 下载 Release 里的 tar.gz,校验,调 install.sh;装完自动恢复开关+重启内核
-#   clash_selfupdate.sh <id> status    → 回传 merlinclash_selfupdate_status(页面轮询安装进度)
+# 用法(由前端经 /_api/ 调用,$1=请求ID 由 base.sh 接住,动作在 $2):
+#   clash_selfupdate.sh <id> check     → 回传 new:<版本> / latest:<版本> / error:<原因>
+#   clash_selfupdate.sh <id> install   → 下载 → 校验 → install.sh → 恢复开关 + 重启内核
+#   clash_selfupdate.sh <id> status    → 回传 merlinclash_selfupdate_status(页面轮询进度)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# 🟥 本脚本只允许写 merlinclash_selfupdate_status 这一个 dbus 键,而且写进去的值
+#    必须先过 sane()。原因:18 个 MC2 脚本(含 clash_config.sh:9,开机自启和总开关
+#    都走它)会执行 `eval $(dbus export merlinclash_)`,而 `dbus export` 吐出的是
+#    **零转义**的 `export KEY="值"`。往 merlinclash_ 命名空间里塞任何外部内容 =
+#    把 root 命令执行权交出去。实测:
+#        dbus set zz_x='note with $(id -u) inside'
+#        eval $(dbus export zz_)      →  sh: eval: line 1: id: not found   ← 真的执行了
+#    v1.2.2.5 曾把 GitHub Release 正文原样写进 merlinclash_selfupdate_note,
+#    一条带反引号的发布说明就能在下次开机时以 root 执行。已删除该键。
+#    (这也是 CLAUDE.md 致命坑#4 记的同一个坑,当时只堵了 eval 的读侧,没堵写侧。)
+# ─────────────────────────────────────────────────────────────────────────────
 #
 # 认证:仓库私有时需 dbus set merlinclash_selfupdate_token=<github PAT>;公开仓库留空即可。
 source /koolshare/scripts/base.sh
 REPO="${merlinclash_selfupdate_repo:-wawnnzxd/MC2-merlin}"
 TOKEN="$(dbus get merlinclash_selfupdate_token)"
 API="https://api.github.com/repos/$REPO/releases/latest"
-LOG=/tmp/upload/merlinclash_selfupdate.log
+LOG=/tmp/upload/merlinclash_selfupdate.log        # 安装日志:失败时用户唯一的线索,只许追加
+CHKLOG=/tmp/upload/merlinclash_selfcheck.log      # 检查日志:每次开页面都会重写,不能和上面共用
+LOCK=/tmp/mc_selfupdate.lock
 ACTION="$2"
 
-AUTH=""
-[ -n "$TOKEN" ] && AUTH="-H \"Authorization: Bearer $TOKEN\""
+# 版本号/标签只允许这些字符。任何要进 dbus 或进 shell 展开的外部字符串都过这里。
+sane(){ echo "$1" | tr -cd 'A-Za-z0-9._:-' | cut -c1-64; }
+set_status(){ dbus set merlinclash_selfupdate_status="$(sane "$1")"; }
 
 cur_ver(){ cat /koolshare/merlinclash/version 2>/dev/null | tr -d ' \r\n'; }
 
+# 装完/失败都要走这里。/tmp 是 tmpfs(占内存),解包出来的 /tmp/merlinclash 实测 27MB,
+# 不删就一直占着 2GB 内存里的 27MB 直到重启 —— 这正是"bug 造成的资源占用"。
+cleanup_tmp(){ rm -rf /tmp/mc_update.tar.gz /tmp/merlinclash >/dev/null 2>&1; }
+
 fetch_latest(){
-	# 输出: tag \t 下载URL \t asset API URL \t 发布说明(单行)
-	eval curl -s -m 25 $AUTH -H '"Accept: application/vnd.github+json"' "$API" > /tmp/mc_release.json 2>/dev/null
-	[ -s /tmp/mc_release.json ] || return 1
-	grep -q '"tag_name"' /tmp/mc_release.json || return 1
-	TAG=$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' /tmp/mc_release.json | head -1)
-	# 私有仓库的 asset 必须走 API url + Accept: application/octet-stream,browser_download_url 会 404
-	ASSET_API=$(grep -oE '"url": *"https://api.github.com/repos/[^"]+/releases/assets/[0-9]+"' /tmp/mc_release.json | head -1 | sed 's/.*"url": *"//;s/"$//')
-	DL=$(sed -n 's/.*"browser_download_url": *"\([^"]*\.tar\.gz\)".*/\1/p' /tmp/mc_release.json | head -1)
-	NOTE=$(sed -n 's/.*"body": *"\([^"]*\)".*/\1/p' /tmp/mc_release.json | head -1 | sed 's/\\r\\n/ /g;s/\\n/ /g' | cut -c1-300)
-	printf '%s\t%s\t%s\t%s\n' "$TAG" "$DL" "$ASSET_API" "$NOTE"
+	# 输出: tag \t 下载URL \t asset API URL
+	# 临时文件带 $$:页面轮询每 5 秒调一次 status,若与另一个标签页的 check 撞上,
+	# 固定文件名会被对方删掉,check 于是误报"无法访问 GitHub"。
+	JF="/tmp/mc_release.$$.json"
+	# 不用 eval:TOKEN 来自 dbus,含引号会让 eval 语法炸掉,含 $() 则以 root 执行。
+	# 改成条件分支传参,curl 自己处理引号,没有再解析一层的机会。
+	if [ -n "$TOKEN" ]; then
+		curl -s -m 25 -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" "$API" > "$JF" 2>/dev/null
+	else
+		curl -s -m 25 -H "Accept: application/vnd.github+json" "$API" > "$JF" 2>/dev/null
+	fi
+	if [ ! -s "$JF" ] || ! grep -q '"tag_name"' "$JF"; then rm -f "$JF"; return 1; fi
+	TAG=$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' "$JF" | head -1)
+	# 瘦包优先:整包 21MB 里 24MB 解包内容有 22MB 是逐版没变过的 mihomo 二进制和
+	# dashboard;只改 UI/脚本的版本发一个 ~600KB 的 *_slim.tar.gz,省 35 倍流量,
+	# 也省掉 install.sh 每次把那 22MB 原样重写回 U 盘。没有瘦包就回落整包。
+	DL=$(sed -n 's/.*"browser_download_url": *"\([^"]*slim[^"]*\.tar\.gz\)".*/\1/p' "$JF" | head -1)
+	[ -z "$DL" ] && DL=$(sed -n 's/.*"browser_download_url": *"\([^"]*\.tar\.gz\)".*/\1/p' "$JF" | head -1)
+	# 私有仓库的 asset 必须走 API url + Accept: application/octet-stream(browser_download_url 会 404)。
+	# 把 assets 数组按 },{ 拆行,只在**含所选包名的那一条**里取 url —— 否则挑了瘦包却下到整包。
+	ASSET_API=""
+	if [ -n "$DL" ]; then
+		ASSET_API=$(sed 's/},{/}\n{/g' "$JF" | grep -F "$(basename "$DL")" \
+			| sed -n 's|.*"url": *"\(https://api\.github\.com/[^"]*releases/assets/[0-9]*\)".*|\1|p' | head -1)
+	fi
+	rm -f "$JF"
+	printf '%s\t%s\t%s\n' "$TAG" "$DL" "$ASSET_API"
 }
 
 case "$ACTION" in
 check)
-	echo_date "检查 $REPO 最新版本..." > $LOG
-	R=$(fetch_latest) || { dbus set merlinclash_selfupdate_status="error:无法访问 api.github.com(代理未起?)"; http_response "error"; exit 0; }
-	TAG=$(echo "$R" | cut -f1); DL=$(echo "$R" | cut -f2); NOTE=$(echo "$R" | cut -f4)
-	LATEST="${TAG#v}"; CUR=$(cur_ver)
-	dbus set merlinclash_selfupdate_latest="$LATEST"
-	dbus set merlinclash_selfupdate_current="$CUR"
-	dbus set merlinclash_selfupdate_note="$NOTE"
-	dbus set merlinclash_selfupdate_checked="$(date '+%Y-%m-%d %H:%M')"
+	echo_date "检查 $REPO 最新版本..." > $CHKLOG
+	R=$(fetch_latest) || { set_status "error:github-unreachable"; http_response "error:无法访问 api.github.com(代理未起?)"; exit 0; }
+	TAG=$(echo "$R" | cut -f1)
+	LATEST="$(sane "${TAG#v}")"; CUR="$(sane "$(cur_ver)")"
 	# ⚠️ versioncmp 语义反直觉:`versioncmp A B` 在 **A 比 B 新时输出 -1**(实测 1.2.2.2 vs 1.2.2.1 → -1)。
 	#    软件中心自己也是这么用的:versioncmp 在线版 本地版 → 判 -1 为有新版。别改成 1,会永远"已是最新"。
 	CMP=$(/koolshare/bin/versioncmp "$LATEST" "$CUR" 2>/dev/null)
+	# 安装正在进行时不要覆盖状态机:页面每次加载 3 秒后自动 check,而 status 是
+	# 安装进度的唯一载体,被 check 写成 new/latest 会让轮询彻底看不懂。
+	ST="$(dbus get merlinclash_selfupdate_status)"
+	case "$ST" in
+		downloading:*|installing:*|restarting:*) BUSY=1 ;;
+		*) BUSY=0 ;;
+	esac
 	if [ "$CMP" = "-1" ]; then
-		dbus set merlinclash_selfupdate_status="new"
-		echo_date "发现新版本 $LATEST(当前 $CUR)" >> $LOG
+		[ "$BUSY" = "0" ] && set_status "new"
+		echo_date "发现新版本 $LATEST(当前 $CUR)" >> $CHKLOG
 		http_response "new:$LATEST"
 	else
-		dbus set merlinclash_selfupdate_status="latest"
-		echo_date "已是最新($CUR)" >> $LOG
+		[ "$BUSY" = "0" ] && set_status "latest"
+		echo_date "已是最新($CUR)" >> $CHKLOG
 		http_response "latest:$CUR"
 	fi
 	;;
 install)
+	# 互斥:mkdir 是原子的。刷新页面会让「立即更新」按钮重新可点,不加锁就可能有
+	# 两路安装共用 /tmp/mc_update.tar.gz 和 /tmp/merlinclash 互相拆台。
+	# 锁超过 15 分钟视为上一轮崩了(子 shell 被 kill 就不会 rmdir),强行接管。
+	# 没有这个兜底,一次异常就会让「立即更新」永久点不动,直到重启清空 /tmp。
+	[ -n "$(find /tmp -maxdepth 1 -name mc_selfupdate.lock -mmin +15 2>/dev/null)" ] && rmdir "$LOCK" 2>/dev/null
+	if ! mkdir "$LOCK" 2>/dev/null; then
+		# 已经有一路在装:把真实进度回给前端,让它直接接着轮询,别显示 "already"
+		http_response "$(dbus get merlinclash_selfupdate_status)"
+		exit 0
+	fi
 	echo_date "开始自更新..." > $LOG
-	R=$(fetch_latest) || { echo_date "❌ 获取 Release 失败" >> $LOG; dbus set merlinclash_selfupdate_status="failed:无法访问 api.github.com"; http_response "error"; exit 0; }
+	R=$(fetch_latest) || {
+		echo_date "❌ 获取 Release 失败" >> $LOG
+		set_status "failed:github-unreachable"; rmdir "$LOCK" 2>/dev/null
+		http_response "error:无法访问 api.github.com"; exit 0; }
 	TAG=$(echo "$R" | cut -f1); DL=$(echo "$R" | cut -f2); ASSET_API=$(echo "$R" | cut -f3)
-	LATEST="${TAG#v}"
+	LATEST="$(sane "${TAG#v}")"
 	WAS_ON="$(dbus get merlinclash_enable)"
-	dbus set merlinclash_selfupdate_status="downloading:$LATEST"
-	# ★ 立即返回,不在前台等 20MB 下载(前台等会让 /_api/ ajax 超时,页面误报"更新失败")。
+	set_status "downloading:$LATEST"
+	# ★ 立即返回,不在前台等下载(前台等会让 /_api/ ajax 超时,页面误报"更新失败")。
 	#   下载→校验→install.sh→恢复开关重启内核 全部塞进后台子 shell;页面轮询 status 看进度。
 	http_response "installing:$LATEST"
 	(
 		trap '' HUP
-		echo_date "目标版本 $LATEST,下载中..." >> $LOG
+		echo_date "目标版本 $LATEST,下载 $(basename "$DL") ..." >> $LOG
 		rm -f /tmp/mc_update.tar.gz
 		if [ -n "$TOKEN" ] && [ -n "$ASSET_API" ]; then
 			curl -sL -m 300 -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" -o /tmp/mc_update.tar.gz "$ASSET_API"
@@ -80,43 +133,53 @@ install)
 			curl -sL -m 300 -o /tmp/mc_update.tar.gz "$DL"
 		fi
 		SZ=$(wc -c < /tmp/mc_update.tar.gz 2>/dev/null || echo 0)
-		if [ "$SZ" -lt 1000000 ]; then
+		if [ "$SZ" -lt 200000 ]; then
 			echo_date "❌ 下载失败或文件异常($SZ 字节)" >> $LOG
-			dbus set merlinclash_selfupdate_status="failed:下载失败($SZ 字节)"; exit 0
+			set_status "failed:download-$SZ"; cleanup_tmp; rmdir "$LOCK" 2>/dev/null; exit 0
 		fi
-		if ! tar -tzf /tmp/mc_update.tar.gz >/dev/null 2>&1; then
-			echo_date "❌ 压缩包损坏" >> $LOG; rm -f /tmp/mc_update.tar.gz
-			dbus set merlinclash_selfupdate_status="failed:压缩包损坏"; exit 0
+		# 解包即校验:tar -xzf 失败说明包坏了。原来先 tar -tzf 再 tar -xzf 等于把
+		# 21MB 整包 gunzip 两遍,白烧一倍 CPU(路由器上这不是小数目)。
+		echo_date "下载完成($((SZ/1024))KB),开始安装..." >> $LOG
+		set_status "installing:$LATEST"
+		rm -rf /tmp/merlinclash
+		if ! ( cd /tmp && tar -xzf /tmp/mc_update.tar.gz ) 2>/dev/null || [ ! -f /tmp/merlinclash/install.sh ]; then
+			echo_date "❌ 压缩包损坏或结构不对" >> $LOG
+			set_status "failed:bad-archive"; cleanup_tmp; rmdir "$LOCK" 2>/dev/null; exit 0
 		fi
-		echo_date "下载完成($((SZ/1024/1024))MB),校验通过,开始安装..." >> $LOG
-		dbus set merlinclash_selfupdate_status="installing:$LATEST"
-		rm -rf /tmp/merlinclash && cd /tmp && tar -xzf /tmp/mc_update.tar.gz && sh /tmp/merlinclash/install.sh >> $LOG 2>&1
+		sh /tmp/merlinclash/install.sh >> $LOG 2>&1
 		rc=$?
-		NOW="$(cat /koolshare/merlinclash/version 2>/dev/null | tr -d ' \r\n')"
+		NOW="$(sane "$(cur_ver)")"
 		if [ "$rc" = "0" ] && [ "$NOW" = "$LATEST" ]; then
 			if [ "$WAS_ON" = "1" ]; then
 				echo_date "文件更新完成,恢复开关并重启内核..." >> $LOG
-				dbus set merlinclash_selfupdate_status="restarting:$LATEST"
+				set_status "restarting:$LATEST"
 				dbus set merlinclash_enable=1
 				sh /koolshare/scripts/clash_config.sh restart restart >/dev/null 2>&1
 			fi
-			dbus set merlinclash_selfupdate_status="done:$LATEST"
-			dbus set merlinclash_selfupdate_current="$LATEST"
+			set_status "done:$LATEST"
 			echo_date "✅ 自更新完成:$LATEST" >> $LOG
 		else
-			dbus set merlinclash_selfupdate_status="failed:install.sh rc=$rc 当前版本 $NOW"
-			echo_date "❌ install.sh 退出码 $rc,当前版本 $NOW,请看日志" >> $LOG
+			# install.sh 已经跑过 `clash_config.sh stop stop`,里面 stop_config() 会把
+			# merlinclash_enable 置 0。失败就停在这里的话,用户是"代理被关掉 + 一行红字",
+			# 家里直接没代理。原来是开着的就把它拉回来,能救多少救多少。
+			echo_date "❌ install.sh 退出码 $rc,当前版本 $NOW" >> $LOG
+			if [ "$WAS_ON" = "1" ]; then
+				echo_date "尝试用原有文件恢复代理..." >> $LOG
+				dbus set merlinclash_enable=1
+				sh /koolshare/scripts/clash_config.sh restart restart >/dev/null 2>&1
+			fi
+			set_status "failed:install-rc$rc-now$NOW"
 		fi
-		rm -f /tmp/mc_update.tar.gz
+		cleanup_tmp
+		rmdir "$LOCK" 2>/dev/null
 	) &
 	;;
 status)
-	# 页面轮询安装进度:installing:<v> → restarting:<v> → done:<v> | failed:<原因>
+	# 页面轮询安装进度:downloading:<v> → installing:<v> → restarting:<v> → done:<v> | failed:<原因>
 	http_response "$(dbus get merlinclash_selfupdate_status)"
 	;;
 *)
 	http_response "usage: check|install|status"
 	;;
 esac
-rm -f /tmp/mc_release.json
 exit 0

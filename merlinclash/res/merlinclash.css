@@ -293,22 +293,22 @@
 
    Measured after, on all 8 tabs: label width 232px everywhere, value column
    starting on the identical x everywhere, and no horizontal overflow. */
-#app .FormTable > tbody > tr:has(> th + td:last-child),
-#app .FormTable_table > tbody > tr:has(> th + td:last-child),
+#app .FormTable > :is(tbody,tfoot) > tr:has(> th + td:last-child),
+#app .FormTable_table > :is(tbody,tfoot) > tr:has(> th + td:last-child),
 #app .FormTable > thead > tr:has(> td:only-child),
 #app .FormTable_table > thead > tr:has(> td:only-child) {
 	display: flex;
 	align-items: center;
 }
-#app .FormTable > tbody > tr:has(> th + td:last-child) > th,
-#app .FormTable_table > tbody > tr:has(> th + td:last-child) > th {
+#app .FormTable > :is(tbody,tfoot) > tr:has(> th + td:last-child) > th,
+#app .FormTable_table > :is(tbody,tfoot) > tr:has(> th + td:last-child) > th {
 	flex: 0 0 var(--mc-label-w);
 	width: var(--mc-label-w);
 	min-width: 0;
 	box-sizing: border-box;
 }
-#app .FormTable > tbody > tr:has(> th + td:last-child) > td,
-#app .FormTable_table > tbody > tr:has(> th + td:last-child) > td,
+#app .FormTable > :is(tbody,tfoot) > tr:has(> th + td:last-child) > td,
+#app .FormTable_table > :is(tbody,tfoot) > tr:has(> th + td:last-child) > td,
 #app .FormTable > thead > tr:has(> td:only-child) > td,
 #app .FormTable_table > thead > tr:has(> td:only-child) > td {
 	flex: 1 1 auto;
@@ -317,15 +317,15 @@
 }
 /* a tall value cell (config box, log, list) shouldn't drag its label to the
    vertical middle of a 380px box, half a screen from what it names */
-#app .FormTable > tbody > tr:has(textarea) > th,
-#app .FormTable > tbody > tr:has(td table) > th,
-#app .FormTable > tbody > tr:has(td ul) > th { align-self: flex-start; }
+#app .FormTable > :is(tbody,tfoot) > tr:has(textarea) > th,
+#app .FormTable > :is(tbody,tfoot) > tr:has(td table) > th,
+#app .FormTable > :is(tbody,tfoot) > tr:has(td ul) > th { align-self: flex-start; }
 /* narrow windows: stack label over value instead of crushing the value column */
 @media (max-width: 860px) {
-	#app .FormTable > tbody > tr:has(> th + td:last-child),
-	#app .FormTable_table > tbody > tr:has(> th + td:last-child) { flex-wrap: wrap; }
-	#app .FormTable > tbody > tr:has(> th + td:last-child) > th,
-	#app .FormTable_table > tbody > tr:has(> th + td:last-child) > th {
+	#app .FormTable > :is(tbody,tfoot) > tr:has(> th + td:last-child),
+	#app .FormTable_table > :is(tbody,tfoot) > tr:has(> th + td:last-child) { flex-wrap: wrap; }
+	#app .FormTable > :is(tbody,tfoot) > tr:has(> th + td:last-child) > th,
+	#app .FormTable_table > :is(tbody,tfoot) > tr:has(> th + td:last-child) > th {
 		flex-basis: 100%;
 		width: auto;
 		padding-bottom: 0 !important;
@@ -345,17 +345,26 @@
    cells have different heights (a 30px label beside a 377px config box), so a
    per-cell border draws the SAME divider at two different y — measured 13px to
    347px apart before this. One border on the row = one line, always straight. */
-#app .FormTable > tbody > tr:has(> th + td:last-child),
-#app .FormTable_table > tbody > tr:has(> th + td:last-child) {
+#app .FormTable > :is(tbody,tfoot) > tr:has(> th + td:last-child),
+#app .FormTable_table > :is(tbody,tfoot) > tr:has(> th + td:last-child) {
 	border-bottom: 1px solid var(--mc-border-soft);
 }
-#app .FormTable > tbody > tr:last-child, #app .FormTable_table > tbody > tr:last-child { border-bottom: 0; }
+/* 表内最后一行不画线。注意:一张表同时有 tbody+tfoot 时,tbody 的最后一行后面还有
+   tfoot,那条线要留着,所以用 :last-child 限定在"整张表的最后一个行组"上。 */
+#app .FormTable > tfoot > tr:last-child, #app .FormTable_table > tfoot > tr:last-child,
+#app .FormTable > tbody:last-child > tr:last-child,
+#app .FormTable_table > tbody:last-child > tr:last-child { border-bottom: 0; }
 /* multi-column list rows keep their own per-cell divider (they have no th) */
-#app .FormTable_table > tbody > tr:not(:has(> th + td:last-child)) > th,
-#app .FormTable_table > tbody > tr:not(:has(> th + td:last-child)) > td { border-bottom: 1px solid var(--mc-border-soft) !important; }
+#app .FormTable_table > :is(tbody,tfoot) > tr:not(:has(> th + td:last-child)) > th,
+#app .FormTable_table > :is(tbody,tfoot) > tr:not(:has(> th + td:last-child)) > td { border-bottom: 1px solid var(--mc-border-soft) !important; }
 #app .FormTable tbody tr, #app .FormTable_table tbody tr { transition: background var(--mc-dur) var(--mc-ease); }
 #app .FormTable tbody tr:hover, #app .FormTable_table tbody tr:hover { background: #ffffff06; }
-#app .sp_bottom_line { border-bottom: 0 !important; }   /* superseded by the row divider above */
+/* 分隔线已统一由行来画(见上),单元格上的 .sp_bottom_line 就该归零,免得出现双线。
+   但这个 class 在 ASP:3551 还被挂在一个 <tr> 上 —— 那一行本该有线,不能一起清掉,
+   所以这里限定到 th/td。(v1.2.2.5 写成裸 .sp_bottom_line,"大陆IP白名单"那行的
+   分隔线因此消失,和下面一行黏成一块。) */
+#app .FormTable th.sp_bottom_line, #app .FormTable td.sp_bottom_line,
+#app .FormTable_table th.sp_bottom_line, #app .FormTable_table td.sp_bottom_line { border-bottom: 0 !important; }
 
 /* List tables (.list_table — ACL rule rows). On the stock sheet these are
    750px-wide twins of the header table above them; 100% keeps the columns
@@ -468,17 +477,26 @@
 		border-color var(--mc-dur) var(--mc-ease), box-shadow var(--mc-dur) var(--mc-ease),
 		transform var(--mc-dur-press) var(--mc-ease);
 }
-/* hover is gated: a touch screen fires it on tap, so an ungated hover state
-   leaves the button stuck "lit" after the finger lifts */
+/* This block is two different jobs and they must not share a media query.
+   softcenter.css ships an UNGATED `#app[skin=X] .ks_btn:hover` at (1,3,0) that
+   resets our pill to `padding:5px; border-radius:5px; font-size:10pt; white on
+   a grey gradient`. Our base rule is only (1,2,0), so it cannot outrank it —
+   the :hover override below is what holds the geometry, and it has to exist on
+   every device. A touch screen still fires :hover on tap (and it sticks until
+   you tap elsewhere), so putting the whole block behind `(hover:hover)` made
+   every tap on a phone flash the stock firmware button. Geometry stays out
+   here; only the pointer-specific lift/glow goes behind the media query. */
+#app[skin] .ks_btn:hover, #app[skin] a.ks_btn:hover {
+	width: auto;
+	padding: 8px 13px;
+	font-size: 13px;
+	border-radius: var(--mc-pill);   /* softcenter's hover tier resets it to 5px */
+	color: var(--mc-accent-ink);
+	background: linear-gradient(180deg, var(--mc-accent), var(--mc-accent-2));
+	border-color: transparent;
+}
 @media (hover: hover) and (pointer: fine) {
 	#app[skin] .ks_btn:hover, #app[skin] a.ks_btn:hover {
-		width: auto;
-		padding: 8px 13px;
-		font-size: 13px;
-		border-radius: var(--mc-pill);   /* softcenter's hover tier resets it to 5px */
-		color: var(--mc-accent-ink);
-		background: linear-gradient(180deg, var(--mc-accent), var(--mc-accent-2));
-		border-color: transparent;
 		box-shadow: 0 6px 18px var(--mc-accent-glow);
 		transform: translateY(-1px);
 	}

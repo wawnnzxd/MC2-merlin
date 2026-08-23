@@ -491,7 +491,34 @@
 		})
 		return pushData;
 	}
-	/* ===== MC2-merlin 自更新(wawnnzxd/MC2-merlin)===== */
+	/* ===== MC2-merlin 自更新(wawnnzxd/MC2-merlin)=====
+	   状态机: (点更新) → downloading → installing → restarting → done | failed
+	   后端把状态放在 dbus merlinclash_selfupdate_status,前端每 5 秒 poll 一次。
+	   后端的状态值刻意只用 ASCII(见 clash_selfupdate.sh 顶部的 dbus/eval 说明),
+	   中文提示在这边翻译。 */
+	var MC_SU_FAIL = {
+		"github-unreachable": "连不上 api.github.com(代理没起?)",
+		"bad-archive":        "下载的安装包损坏",
+	};
+	function mc_su_fail_text(code){
+		if (MC_SU_FAIL[code]) return MC_SU_FAIL[code];
+		var m = code.match(/^download-(\d+)$/);
+		if (m) return "下载失败(只收到 " + m[1] + " 字节)";
+		m = code.match(/^install-rc(\d+)-now(.+)$/);
+		if (m) return "安装脚本退出码 " + m[1] + ",当前仍是 " + m[2] + " —— 详情见日志记录";
+		return code;
+	}
+	// 三条终止分支都必须复位按钮。v1.2.2.5 的 bug:点了更新后 onclick 被清空,
+	// 失败/超时/登录过期时只写一行红字就 return,按钮还是橙色「立即更新」+ 手型光标,
+	// 但点了完全没反应(空 onclick 覆盖了原处理器),用户只能靠自己想到按 F5。
+	function mc_su_rearm(label){
+		var b = E("mc_selfupdate_btn");
+		if (!b) return;
+		b.innerHTML = "<i style='color:#ff9900'>" + (label || "重新检查") + "</i>";
+		b.setAttribute("onclick", "mc_selfupdate('check')");
+	}
+	function mc_su_say(color, html){ var m = E("mc_selfupdate_msg"); if (m) m.innerHTML = "<span style='color:" + color + "'>" + html + "</span>"; }
+
 	function mc_selfupdate(action){
 		var msg = E("mc_selfupdate_msg"), btn = E("mc_selfupdate_btn");
 		if (action == "install" && !confirm("将下载并安装新版本:期间 mihomo 会重启(约 1 分钟断网),装完自动恢复。继续?")) return;
@@ -500,35 +527,50 @@
 		mc_selfupdate_api(action, function(r){
 			if (r.indexOf("new:") == 0) {
 				var v = r.substring(4);
-				msg.innerHTML = "<span style='color:#ff9900'>发现新版本 <b>" + v + "</b></span>";
+				mc_su_say("#ff9900", "发现新版本 <b>" + mc_esc(v) + "</b>");
 				btn.innerHTML = "<i style='color:#ff9900'>立即更新</i>";
 				btn.setAttribute("onclick", "mc_selfupdate('install')");
 			} else if (r.indexOf("latest:") == 0) {
-				msg.innerHTML = "<span style='color:#5ce58a'>已是最新 " + r.substring(7) + "</span>";
-			} else if (r.indexOf("installing:") == 0) {
+				mc_su_say("#5ce58a", "已是最新 " + mc_esc(r.substring(7)));
+				mc_su_rearm("检查更新");
+			} else if (r.indexOf("installing:") == 0 || r.indexOf("downloading:") == 0) {
 				btn.setAttribute("onclick", "");
 				mc_selfupdate_poll(0);
+			} else if (r == "__auth__") {
+				mc_su_say("#ff9900", "登录已过期,请重新登录路由器后再试");
+				mc_su_rearm();
+			} else if (r.indexOf("error:") == 0) {
+				mc_su_say("#ff3358", "检查失败:" + mc_esc(r.substring(6)));
+				mc_su_rearm();
 			} else {
-				msg.innerHTML = r == "__auth__"
-					? "<span style='color:#ff9900'>登录已过期,请重新登录路由器后再试</span>"
-					: "<span style='color:#ff3358'>" + (action == "check" ? "检查失败" : "更新失败") + ":" + (r || "无响应") + "</span>";
+				mc_su_say("#ff3358", (action == "check" ? "检查失败" : "更新失败") + ":" + mc_esc(r || "无响应"));
+				mc_su_rearm();
 			}
-		}, function(){ msg.innerHTML = "<span style='color:#ff3358'>请求失败</span>"; });
+		}, function(){ mc_su_say("#ff3358", "请求失败"); mc_su_rearm(); });
 	}
-	// 安装进度轮询:installing → restarting → done | failed(后端 clash_selfupdate.sh status 回传 dbus 状态)
+	// 轮询上限 120 次 × 5 秒 = 10 分钟。后端 curl 自己就允许 300 秒下载 + install.sh
+	// 复制 20+MB 到 U 盘 + 重启内核,慢速链路下 5 分钟不够,会在装成功的同时误报超时。
 	function mc_selfupdate_poll(n){
-		var msg = E("mc_selfupdate_msg");
-		if (n > 60) { msg.innerHTML = "<span style='color:#ff3358'>等待超时,请看日志后手动刷新</span>"; return; }
+		if (n > 120) {
+			mc_su_say("#ff3358", "等待超时 —— 更新可能仍在后台进行,请看「日志记录」后刷新本页");
+			mc_su_rearm();
+			return;
+		}
 		mc_selfupdate_api("status", function(r){
-			if (r.indexOf("downloading:") == 0) msg.innerHTML = "<span style='color:#ff9900'>正在下载 " + r.substring(12) + " (约 20MB)...</span>";
-			else if (r.indexOf("installing:") == 0) msg.innerHTML = "<span style='color:#ff9900'>正在安装 " + r.substring(11) + " ...</span>";
-			else if (r.indexOf("restarting:") == 0) msg.innerHTML = "<span style='color:#ff9900'>文件已更新,正在重启内核 ...</span>";
-			else if (r.indexOf("done:") == 0) { msg.innerHTML = "<span style='color:#5ce58a'>已更新到 " + r.substring(5) + ",3 秒后刷新页面</span>"; setTimeout(function(){ location.reload(); }, 3000); return; }
-			else if (r.indexOf("failed:") == 0) { msg.innerHTML = "<span style='color:#ff3358'>更新失败:" + r.substring(7) + "</span>"; return; }
-			else if (r == "__auth__") { msg.innerHTML = "<span style='color:#ff9900'>登录已过期,更新仍在后台进行 —— 重新登录后刷新本页查看结果</span>"; return; }
+			if (r.indexOf("downloading:") == 0)      mc_su_say("#ff9900", "正在下载 " + mc_esc(r.substring(12)) + " ...");
+			else if (r.indexOf("installing:") == 0)  mc_su_say("#ff9900", "正在安装 " + mc_esc(r.substring(11)) + " ...");
+			else if (r.indexOf("restarting:") == 0)  mc_su_say("#ff9900", "文件已更新,正在重启内核 ...");
+			else if (r.indexOf("done:") == 0) { mc_su_say("#5ce58a", "已更新到 " + mc_esc(r.substring(5)) + ",3 秒后刷新页面"); setTimeout(function(){ location.reload(); }, 3000); return; }
+			else if (r.indexOf("failed:") == 0) { mc_su_say("#ff3358", "更新失败:" + mc_esc(mc_su_fail_text(r.substring(7)))); mc_su_rearm(); return; }
+			else if (r == "__auth__") { mc_su_say("#ff9900", "登录已过期,更新仍在后台进行 —— 重新登录后刷新本页查看结果"); mc_su_rearm(); return; }
+			// 未知状态(例如另一个标签页的 check 把状态改成了 new/latest):不再空转到超时
+			else if (r.indexOf("new") == 0 || r.indexOf("latest") == 0 || r === "") { mc_su_say("#a4b5bd", "安装流程已结束,正在刷新..."); setTimeout(function(){ location.reload(); }, 1500); return; }
 			setTimeout(function(){ mc_selfupdate_poll(n + 1); }, 5000);
 		}, function(){ setTimeout(function(){ mc_selfupdate_poll(n + 1); }, 5000); });
 	}
+	// 后端回传的字符串会进 innerHTML。值本身已在后端过了 sane()(只剩 [A-Za-z0-9._:-]),
+	// 这里再转义一次是纵深:任何一层将来放宽了,另一层还兜得住。
+	function mc_esc(t){ return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 	function mc_selfupdate_api(action, ok, fail){
 		var id = parseInt(Math.random() * 100000000);
 		$.ajax({
