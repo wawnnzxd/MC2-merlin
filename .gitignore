@@ -2,3 +2,8 @@
 *.orig
 # 打包产物走 GitHub Releases,不进 git 历史(每版 20MB 二进制会让仓库迅速膨胀)
 packages/*.tar.gz
+# 内核与面板不进 git:内核 44.5M(每次升级都会让历史膨胀一份),
+# 面板是自家 fork(wawnnzxd/zashboard)有独立 repo+release。
+# 两者都由 build.sh 检查存在性,release 包永远完整。
+merlinclash/bin64/clash
+merlinclash/dashboard/zashboard/

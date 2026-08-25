@@ -1,0 +1,28 @@
+#!/bin/sh
+# base64 —— openssl 兜底实现(原版梅林固件级缺件)
+#
+# koolshare 固件带 base64 二进制,原版梅林没有:busybox 没编这个 applet,
+# /bin /sbin /usr/bin 全找不到。MC2 的 clash_yamlfilechange.sh(网页编辑器保存
+# 配置片段的落盘一环)靠它解码,缺了就报「未找到 base64 解码工具」,
+# 保存静默失败 —— dbus 键写进去了、文件却纹丝不动(2026-08-25 真机踩到)。
+#
+# 本机 /usr/sbin/openssl 是有的,用它兜底。两个坑:
+#   ① openssl base64 -d 要求每行 ≤76 字符 —— dbus 里的 base64 是一整行,
+#      直接喂会解出空。先用 sed 每 64 字符切一刀再解,任意长度都稳。
+#      (不用 -A:部分 openssl 版本 -A 解长单行会静默截断,风险更大。)
+#   ② 编码方向用 -A 出单行(跟 GNU base64 -w0 一致),脚本拼 dbus 值
+#      不会被换行搅局。
+#
+# 同内容硬链一份 base64_decode(clash_yamlfilechange.sh 的 get_base64_bin
+# 第一优先找的就是这个名字,两个名字都给上)。
+
+case "$1" in
+	-d|-D|--decode)
+		sed 's/.\{64\}/&\
+/g' | /usr/sbin/openssl base64 -d
+		;;
+	*)
+		/usr/sbin/openssl base64 -A
+		printf '\n'
+		;;
+esac

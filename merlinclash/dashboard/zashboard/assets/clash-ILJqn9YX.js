@@ -1,1 +1,0 @@
-import{N as e,j as t}from"./backend-Bv3tW6G-.js";import{t as n}from"./config-BqTnA8yQ.js";import{t as r}from"./sessionResource-DcznHHBx.js";var i=r(async e=>{let{data:r}=await t({signal:e});return()=>{n.value=r}}),a=e=>i.fetch(e),o=async t=>{await e(t),i.invalidate(),await i.fetch()};export{a as fetchConfigs,o as updateConfigs};

@@ -1,15 +1,32 @@
 # MC2-merlin
 
-Magic Catling 2(merlinclash)的自用定制版。**基底跟随上游,改动以 patch 形式单独维护**,上游更新时重打即可。
+Magic Catling 2(merlinclash)的自用定制版。**从 1.2.2.13 起,本仓库就是主源** ——
+上游降级为参考素材(值得借鉴的单点吸收进来),不再整包跟随。
+兼容性保持:clash 配置文件、dbus 键、后端脚本协议(`case $2` 暗号、`BBABBBBC` 日志标记)与上游一致。
 
-## 相对上游的改动
+## 双固件,一份包,两套皮肤
 
-| # | 改动 | 文件 |
+`install.sh` 是分发器,按固件自动选:
+
+| 固件 | 判据 | 安装分支 | UI |
+|---|---|---|---|
+| koolshare 官改(GT-BE96 等) | `/koolshare` 在 rootfs | `install_koolshare.sh`(上游流程+cp_smart) | 老版 ASP,koolcenter 原版皮肤 |
+| 原版梅林 + koolshare-shim(GT-BE19000AI 等) | KSROOT=`/jffs/koolshare` | `install_merlin.sh`(重写) | **新版 `Module_mc2.asp`**,BE19000AI 风格 |
+
+梅林侧只装新 UI 并清掉老 ASP 的部署与菜单;koolshare 侧反之(dispatcher 删掉误拷的新 UI 文件)。
+卸载同样分发(`uninstall.sh` → `uninstall_koolshare.sh` / `uninstall_merlin.sh`)。
+
+## 相对上游(1.2.2)的改动
+
+| 类 | 改动 | 文件 |
 |---|---|---|
-| 01 | 去在线公告/广告(`notice_show()` 注释,断掉对 raw.githubusercontent.com 的跨域拉取) | `webs/Module_merlinclash.asp` |
-| 01 | **皮肤固定梅林风格**(`<body skin='ASUSWRT'>`,不跟随固件 `sc_skin`;想跟随改回 `<% nvram_get("sc_skin"); %>`) | 同上 |
-| 02 | 重构版 CSS(27.6KB,令牌驱动;ROG/TUF/TS 强调色仍保留在 `[skin=…]` 选择器里) | `res/merlinclash.css` |
-| 03 | **zashboard 面板换自家 fork**(上游每次更新都会覆盖回老版,本仓库固化) | `dashboard/zashboard/` |
+| 界面 | **新版 UI 全套**(BE19000AI 风格重写,8 个 tab;含重启按钮、pollLog baseline 防旧日志假完成、`case $2` 数字暗号 5/25、post 检查 `response.error`) | `webs/Module_mc2.asp`、`res/mc2.js`、`res/mc2.css` |
+| 界面 | 老 ASP 去广告 + 皮肤固定 ASUSWRT + 令牌化 CSS + 自更新入口(patch 01/02/04/05,已固化) | `webs/Module_merlinclash.asp`、`res/merlinclash.css` |
+| 面板 | zashboard 换自家 fork([wawnnzxd/zashboard](https://github.com/wawnnzxd/zashboard),`<title>Desire`;上游平铺 dist 会 404,须放 `dashboard/zashboard/` 子目录) | `dashboard/zashboard/`(不进 git) |
+| 后端 | `clash_config.sh` startime 引号修复(上游 bug:不加引号 dbus 只收到日期半截) | `scripts/clash_config.sh` |
+| 后端 | 梅林缺失组件:`dummy_script.sh`(fields-only 保存)、`bin64/base64`(openssl 包装,busybox 没编该 applet)、`mc2_status.sh`(上游无机器可读进程状态)、`mc2_fixlink.sh`(Geo 更新后把大文件归位 ksdata 软链) | `scripts/`、`bin64/` |
+| 自启 | `init.d/V150`(NTP 门控:无 RTC 电池,上电时钟=2024 纪元,等 `ntp_ready=1` 再起内核防 TLS 证书误判)+ `N150`(nat-start) | `init.d/`(仅梅林用) |
+| 守护 | `merlinclash_set_watchdog_sw` 梅林侧强制 0(perp 是 koolshare 私有) | `install_merlin.sh` |
 
 ## 版本号约定
 
@@ -17,17 +34,15 @@ Magic Catling 2(merlinclash)的自用定制版。**基底跟随上游,改动以 
 ⚠️ **不能用 `1.2.2-merlin.1` 这种带横线的格式**:上游 `install.sh` 第 56 行把 version 剥字母/去尾段/删点后做
 **整数比较**(`-lt 100`),带横线会变成 `122-1` 直接报错。四段纯数字 → `1221`,安全。
 
-## 上游更新流程
+## 上游有新版时怎么吸收
 
-```sh
-# 1. 拿新版 MC2_x.y.z_ARM64.tar.gz,解压到 merlinclash/(整个替换)
-# 2. 重打补丁
-cd MC2-merlin && for p in patches/*.patch; do patch -p1 < "$p"; done
-# 3. 面板:按 patches/03-zashboard-fork.md 拉 fork 的 dist.zip 替换
-# 4. 改 merlinclash/version 为 x.y.z.1,打包
-COPYFILE_DISABLE=1 tar --no-xattrs -czf packages/MC2_x.y.z.1_ARM64.tar.gz merlinclash
-```
-patch 冲突 = 上游动了我们改的地方,手工合一下再 `diff -u` 重生成。
+不再整包替换。流程:解包上游新版,`diff -r` 对比 `scripts/`(核心逻辑都在这),
+值得要的改动**单点合入**;界面/安装脚本/面板一律以本仓库为准。
+2026-08-25 对比过上游 1.2.2 包:非面板文件里上游独有的为零 —— 基底就是同一份。
+
+⚠️ 合入脚本改动时核对三个协议耦合点(前端 mc2.js 依赖):
+`case $2` 暗号(update_ipdb=5、chnroute=25、subscribe=upload/update、backup=backup/restore)、
+日志结束标记 `BBABBBBC`、dbus 键名。
 
 ## 安装
 

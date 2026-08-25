@@ -8,6 +8,11 @@
 #     (bin64 11MB + dashboard 13MB 在多数版本之间一个字节都没变)。
 set -e
 cd "$(dirname "$0")"
+# 内核与面板在 .gitignore 里(不进 git),fresh clone 会缺 —— 打包前验完整性:
+#   内核:从上一版 release 包取,或 MetaCubeX/mihomo 官方 release 下载 arm64 版
+#   面板:gh release download --repo wawnnzxd/zashboard --pattern dist.zip
+[ -f merlinclash/bin64/clash ] || { echo "缺 merlinclash/bin64/clash(内核,44M,见 README)"; exit 1; }
+[ -f merlinclash/dashboard/zashboard/index.html ] || { echo "缺面板 dashboard/zashboard/(fork dist,见 patches/03)"; exit 1; }
 VER="$(tr -d ' \r\n' < merlinclash/version)"
 case "$VER" in
 	*.*.*.*) : ;;

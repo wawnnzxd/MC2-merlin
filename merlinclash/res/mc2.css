@@ -1,0 +1,288 @@
+/* mc2.css —— Magic Catling 界面样式(GT-BE19000AI 重写版)
+ *
+ * 设计立场见 ../../DESIGN.md:**延伸现有系统,不另起炉灶**。
+ * 基础组件(卡片 .kslite-card / 按钮 .kslite-btn / 开关行 .ks-switch /
+ * 数据格 .ks-stat / 日志框 .kslite-log)全部复用 kslite.css ——
+ * 那是软件中心、Full Cone NAT、DDNS-Go 三个页面共用的底座。
+ * 本文件只补 MC2 独有的部分:状态条、tab 组、订阅卡、表单行。
+ *
+ * ⚠️ 颜色一律走宿主的 CSS 变量 + fallback:
+ *    变量在 → 跟着宿主主题(浅色/深色)自动切换,不用我们操心;
+ *    变量不在(老固件)→ fallback 兜底,不至于变成黑底黑字。
+ *    **禁止在这里写死具体颜色**,除了下面三个语义色。
+ */
+
+/* ── 语义色:与品牌色分开 ───────────────────────────────
+ * 强调色(ROG 红)不能兼任状态色,否则「运行中」和「出错」撞在同一个红上,
+ * 一眼扫过去分不出好坏。
+ */
+.mc2 {
+	--mc-ok:   #2e9e5b;   /* 运行中 / 正常 */
+	--mc-warn: #e8a33d;   /* 需要注意(与 kslite 容量条同一支橙,保持一致) */
+	/* 已停止 / 危险 直接用 --brand-color,ROG 语境下红=强调=警戒是同源的 */
+}
+
+/* ── 状态条:常驻,不随 tab 变 ──────────────────────────
+ * 原版把「内核在不在跑」埋在第一个面板里,切到别的 tab 就看不见了 ——
+ * 而这恰恰是改任何设置前最该确认的前提。
+ */
+.mc2-hero {
+	display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+	padding: 11px 14px;
+	border: 1px solid var(--wrt-segment-fill-border, rgba(128,128,128,.18));
+	border-radius: 12px;
+}
+.mc2-hero__state { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+
+/* 状态用色点编码,不只靠文字 —— 余光就能判断,不用逐字读 */
+.mc2-dot {
+	width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto;
+	background: var(--text-secondary, #6b7078);
+}
+.mc2-dot.is-on  { background: var(--mc-ok, #2e9e5b); box-shadow: 0 0 0 3px rgba(46,158,91,.18); }
+.mc2-dot.is-off { background: var(--brand-color, #ff1f2c); box-shadow: 0 0 0 3px rgba(255,31,44,.15); }
+
+.mc2-hero__label { font-size: 15px; font-weight: 600; }
+.mc2-hero__core {
+	font-size: 12px; color: var(--text-secondary, #6b7078);
+	font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.mc2-hero__ops { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* 总开关:借宿主的滑块观感,但只用 token 画,不引宿主私有 class
+ * (那些 class 在不同固件版本里名字会变,引了就绑死在某一版上) */
+.mc2-toggle {
+	position: relative; width: 46px; height: 25px; border-radius: 13px;
+	background: rgba(128,128,128,.28); border: none; cursor: pointer; padding: 0;
+	transition: background .22s ease;
+}
+.mc2-toggle::after {
+	content: ""; position: absolute; top: 3px; left: 3px;
+	width: 19px; height: 19px; border-radius: 50%; background: #fff;
+	box-shadow: 0 1px 3px rgba(0,0,0,.3);
+	transition: transform .22s ease;
+}
+.mc2-toggle.is-on { background: var(--mc-ok, #2e9e5b); }
+.mc2-toggle.is-on::after { transform: translateX(21px); }
+.mc2-toggle:disabled { opacity: .5; cursor: not-allowed; }
+.mc2-toggle:focus-visible { outline: 2px solid var(--brand-color, #ff1f2c); outline-offset: 2px; }
+
+/* ── 运行详情:等宽,数字列对齐 ───────────────────────── */
+.mc2-runtime {
+	display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+	gap: 8px; margin-top: 9px;
+}
+.mc2-run {
+	padding: 7px 11px; border-radius: 8px;
+	background: rgba(128,128,128,.08);
+	font-size: 12px;
+}
+.mc2-run__k { color: var(--text-secondary, #6b7078); display: block; margin-bottom: 2px; }
+.mc2-run__v {
+	font-weight: 600;
+	font-family: ui-monospace, Menlo, Consolas, monospace;
+	font-variant-numeric: tabular-nums;      /* 刷新时数字不左右跳 */
+	word-break: break-all;
+}
+
+/* ── Tab 组:pill 式,窄屏横向滚动 ──────────────────────
+ * 八个 tab 用下划线式扫读时不好定位,pill 有明确边界。
+ * 容器 overflow-x:auto —— 窄屏可横向滑,既不换行也不把字挤变形。
+ */
+.mc2-tabs {
+	display: flex; gap: 5px; padding: 4px;
+	margin: 10px 0 9px;
+	border: 1px solid var(--wrt-segment-fill-border, rgba(128,128,128,.18));
+	border-radius: 11px;
+	overflow-x: auto;
+	scrollbar-width: thin;
+}
+.mc2-tabs::-webkit-scrollbar { height: 4px; }
+.mc2-tabs::-webkit-scrollbar-thumb { background: rgba(128,128,128,.3); border-radius: 2px; }
+
+.mc2-tab {
+	flex: 0 0 auto;
+	padding: 8px 15px; border-radius: 8px;
+	border: none; background: transparent; cursor: pointer;
+	font-size: 13px; color: var(--text-secondary, #6b7078);
+	white-space: nowrap;
+	transition: background .16s ease, color .16s ease;
+}
+.mc2-tab:hover { background: rgba(128,128,128,.1); color: var(--text-primary, #272a31); }
+.mc2-tab.is-active {
+	background: var(--brand-color, #ff1f2c); color: #fff; font-weight: 600;
+}
+.mc2-tab:focus-visible { outline: 2px solid var(--brand-color, #ff1f2c); outline-offset: 1px; }
+
+.mc2-panel { display: none; }
+.mc2-panel.is-active { display: block; }
+
+/* ── 表单行:label 左、控件右,不用 table ────────────────
+ * ⚠️ 原版用 <table width="760px">,宽屏两侧大片浪费,而且那些
+ *    带虚线下划线的 label(.hintstyle)会把文字压住显示不全。
+ */
+.mc2-row {
+	display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+	padding: 8px 0;
+	border-bottom: 1px solid var(--wrt-segment-fill-border, rgba(128,128,128,.12));
+}
+.mc2-row:first-child { padding-top: 2px; }
+.mc2-row:last-child { border-bottom: none; padding-bottom: 2px; }
+.mc2-row__k { flex: 0 0 150px; font-size: 13px; }
+.mc2-row__hint { display: block; font-size: 11px; line-height: 1.4; color: var(--text-secondary, #6b7078); margin-top: 1px; }
+.mc2-row__v { flex: 1 1 260px; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+
+/* 开关这类「短行」用两列排。五个开关竖着堆要两百多像素,而每行右边
+ * 只有一个 46px 的开关,右半屏全是空的 —— 横向的地方不用,却让人去纵向滚。
+ * 窄屏 auto-fit 自动回落成一列。 */
+.mc2-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(265px, 1fr));
+	gap: 0 22px;
+}
+.mc2-grid .mc2-row { padding: 7px 0; }
+.mc2-grid .mc2-row__k { flex: 1 1 auto; }
+.mc2-grid .mc2-row__v { flex: 0 0 auto; }
+
+.mc2-input, .mc2-select {
+	flex: 1 1 200px; min-width: 0;
+	padding: 7px 11px; font-size: 13px;
+	border: 1px solid var(--wrt-segment-fill-border, rgba(128,128,128,.3));
+	border-radius: 7px;
+	background: transparent; color: inherit;
+}
+.mc2-input:focus, .mc2-select:focus {
+	outline: none; border-color: var(--brand-color, #ff1f2c);
+}
+.mc2-input--mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+
+/* ── 订阅列表 ──────────────────────────────────────── */
+.mc2-subs { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.mc2-sub {
+	display: flex; align-items: center; gap: 12px;
+	padding: 11px 14px; border-radius: 9px;
+	border: 1px solid var(--wrt-segment-fill-border, rgba(128,128,128,.18));
+}
+.mc2-sub__main { flex: 1 1 auto; min-width: 0; }
+.mc2-sub__name { font-size: 13px; font-weight: 600; }
+.mc2-sub__url {
+	font-size: 11px; color: var(--text-secondary, #6b7078);
+	font-family: ui-monospace, Menlo, Consolas, monospace;
+	overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+	margin-top: 3px;
+}
+.mc2-sub__ops { flex: 0 0 auto; display: flex; gap: 7px; }
+
+/* ── 提示条 ──────────────────────────────────────── */
+.mc2-note {
+	padding: 11px 14px; border-radius: 9px; font-size: 12px; line-height: 1.65;
+	background: rgba(128,128,128,.08);
+	color: var(--text-secondary, #6b7078);
+}
+.mc2-note--warn {
+	background: rgba(232,163,61,.12);
+	color: inherit;
+	border-left: 3px solid var(--mc-warn, #e8a33d);
+}
+.mc2-note code {
+	font-family: ui-monospace, Menlo, Consolas, monospace;
+	font-size: 11px; padding: 1px 5px; border-radius: 4px;
+	background: rgba(128,128,128,.16);
+}
+
+/* ── 分段选择:二选一(DNS 方案 rh/fi、规则模式 easy/pro)─────
+ * radio 的语义、按钮的观感 —— 两个选项摆在一起,当前项一眼可见,
+ * 不用像原版那样读小圆点。 */
+.mc2-seg {
+	display: inline-flex; gap: 4px; padding: 3px;
+	border: 1px solid var(--wrt-segment-fill-border, rgba(128,128,128,.18));
+	border-radius: 9px;
+}
+.mc2-seg__opt {
+	padding: 6px 14px; border: none; border-radius: 7px;
+	background: transparent; cursor: pointer;
+	font-size: 13px; color: var(--text-secondary, #6b7078);
+	transition: background .15s ease, color .15s ease;
+}
+.mc2-seg__opt.is-active {
+	background: var(--brand-color, #ff1f2c); color: #fff; font-weight: 600;
+}
+.mc2-seg__opt:focus-visible { outline: 2px solid var(--brand-color, #ff1f2c); outline-offset: 1px; }
+
+/* ── 内联编辑器:点「编辑」在卡片下方展开,不弹层 ─────────────
+ * 弹层要管遮罩、层级、iframe 里的定位,还挡住上下文;
+ * 就地展开让人始终知道自己在编辑哪一段。 */
+.mc2-editor { display: none; margin-top: 10px; }
+.mc2-editor.is-open { display: block; }
+.mc2-editor__ta {
+	width: 100%; box-sizing: border-box;
+	min-height: 260px; resize: vertical;
+	padding: 10px 12px;
+	border: 1px solid var(--wrt-segment-fill-border, rgba(128,128,128,.3));
+	border-radius: 8px;
+	background: rgba(128,128,128,.05);
+	color: inherit;
+	font-family: ui-monospace, Menlo, Consolas, monospace;
+	font-size: 12px; line-height: 1.6;
+	white-space: pre; overflow-x: auto;      /* yaml 靠缩进,禁自动换行 */
+}
+.mc2-editor__ta:focus { outline: none; border-color: var(--brand-color, #ff1f2c); }
+.mc2-editor__bar {
+	display: flex; align-items: center; gap: 9px; margin-top: 8px;
+}
+.mc2-editor__hint { font-size: 11px; color: var(--text-secondary, #6b7078); flex: 1 1 auto; }
+
+/* ── 数据表:ACL 规则、设备绕行名单 ──────────────────────
+ * 行式 CRUD:末行是"添加行"(输入框),已有行右侧一个删除。
+ * 外层 overflow-x:auto —— 窄屏横向滚表格,不挤压列宽。 */
+.mc2-tablewrap { overflow-x: auto; }
+/* ⚠️ table-layout: fixed 是这张表不横向溢出的关键。
+ * auto 布局下列宽由内容的固有宽度决定 —— 输入框、「全部端口」这类下拉
+ * 各有自己的 min-content,六列加起来轻松超过容器,表格就横向滚了
+ * (2026-08-25 用户截图:左右两头的列都被裁掉)。
+ * fixed 让列宽严格服从 <th> 上的百分比,控件收缩适应单元格。 */
+.mc2-table {
+	width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed;
+	/* 窄屏保底:fixed 表格自己永远不溢出,屏幕太窄时列会挤成一条缝、
+	 * 输入框窄到没法点。给个下限,窄过它就走外层 tablewrap 的横向滚动。 */
+	min-width: 540px;
+}
+.mc2-table th {
+	text-align: left; font-weight: 600; padding: 7px 8px;
+	color: var(--text-secondary, #6b7078);
+	border-bottom: 1px solid var(--wrt-segment-fill-border, rgba(128,128,128,.25));
+	white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mc2-table td {
+	padding: 6px 8px;
+	border-bottom: 1px solid var(--wrt-segment-fill-border, rgba(128,128,128,.12));
+	vertical-align: middle;
+	overflow: hidden; text-overflow: ellipsis;    /* 长 MAC/域名截断出省略号,别撑破列 */
+}
+.mc2-table tr:last-child td { border-bottom: none; }
+.mc2-table .mc2-input, .mc2-table .mc2-select {
+	width: 100%; min-width: 0; box-sizing: border-box;
+	flex: none; padding: 5px 7px; font-size: 12px;
+}
+.mc2-table__mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+/* 行删除:小×,悬停变品牌红。占位小 —— 高频看、低频点 */
+.mc2-x {
+	border: none; background: transparent; cursor: pointer;
+	font-size: 15px; line-height: 1; padding: 3px 7px;
+	color: var(--text-secondary, #6b7078); border-radius: 5px;
+}
+.mc2-x:hover { color: #fff; background: var(--brand-color, #ff1f2c); }
+.mc2-table .is-empty td {
+	text-align: center; color: var(--text-secondary, #6b7078); padding: 14px;
+}
+
+/* 还没重写的 tab —— 说清楚状态,别让人以为页面坏了 */
+.mc2-todo {
+	padding: 34px 20px; text-align: center;
+	font-size: 13px; color: var(--text-secondary, #6b7078);
+}
+.mc2-todo strong { color: var(--text-primary, #272a31); }
+
+@media (prefers-reduced-motion: reduce) {
+	.mc2-toggle, .mc2-toggle::after, .mc2-tab { transition: none; }
+}

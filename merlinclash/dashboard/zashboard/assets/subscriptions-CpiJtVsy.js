@@ -1,1 +1,0 @@
-import{r as e}from"./started_service_pb-DnxlvSvc.js";import{n as t,t as n}from"./streams-DuS2i5i1.js";var r=1000000000n,{method:i}=e,a={logs:e=>t(i.subscribeLog,{},e),connections:e=>t(i.subscribeConnections,{interval:r},e),status:e=>t(i.subscribeStatus,{interval:r},e),groups:e=>t(i.subscribeGroups,{},e),outbounds:e=>t(i.subscribeOutbounds,{},e)},o=(e,t)=>n(a[e],t);export{o as t};

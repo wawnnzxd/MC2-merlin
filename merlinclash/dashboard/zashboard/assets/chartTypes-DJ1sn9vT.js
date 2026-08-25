@@ -1,1 +1,0 @@
-var e=e=>Array.isArray(e)?e:e.value,t=e=>!Array.isArray(e)&&e.init===!0;export{t as n,e as t};

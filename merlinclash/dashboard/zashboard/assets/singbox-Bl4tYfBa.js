@@ -1,1 +1,0 @@
-import{a as e,i as t}from"./rules-Cwg6yMg8.js";var n=async n=>{e.value=[],t.value=[]},r=()=>{};export{n as fetchRules,r as invalidateRules};

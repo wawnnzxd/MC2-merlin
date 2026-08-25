@@ -637,7 +637,10 @@ start_clash(){
 	usleep 300000
 	echo_date "Clash 进程启动成功！(PID: $(pidof clash))" >> $LOG_FILE
 	a_tmp=$(echo_date2)
-	dbus set merlinclash_binary_startime=$a_tmp
+	# ⚠️ [本地修改] 上游漏了引号:$a_tmp 形如「【2026年08月25日 12:07:29】」带空格,
+	#    不加引号 shell 按空格分词,dbus 只收到日期那半截、时分秒丢失。
+	#    (前端 fmtStart() 的显示兜底仍保留 —— 老数据里还是截断的值。)
+	dbus set merlinclash_binary_startime="$a_tmp"
 	clash_process_started="1"
 	rm -rf /tmp/upload/*.yaml
 }
