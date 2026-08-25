@@ -46,7 +46,11 @@ Line: AI
 git commit -F msg.txt --trailer "Line=koolshare"
 ```
 
-查历史时:`git log --format='%h %(trailer:key=Line,valueonly) %s'`
+查历史时(注意是 `trailers` **复数**,单数 `trailer` 在 `git log --format` 里无效):
+
+```bash
+git log --format='%h [%(trailers:key=Line,valueonly,separator=%x2C)] %s'
+```
 
 ## 发版
 
