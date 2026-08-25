@@ -151,19 +151,20 @@ dbus set merlinclash_core_version="${CLVER}"
 
 [ -x "$KSROOT/scripts/ks-autoreg.sh" ] && "$KSROOT/scripts/ks-autoreg.sh" mc2
 
-# 图标 + 菜单名统一。autoreg 挂的类是 ks-app-mc2,图标沿用包里的 icon-merlinclash.png;
-# 旧安装的菜单名可能是「MC2 新版」之类,统一改成 $TITLE。
+# 图标 + 菜单行统一。autoreg 按 Module_mc2.asp 推出的页名是 mc2,但软件中心条目
+# 的 name=merlinclash,「打开」按钮走 pageRedirect(name) → 找 pages/merlinclash.html
+# —— 页名必须叫 merlinclash 才能对上(2026-08-25 清理双条目时踩到:页名 mc2 时
+# Magic Catling 条目的打开按钮点了没反应)。所以 autoreg 之后无条件把菜单行
+# 重挂成 module=merlinclash(del+add 幂等,标题、页名一次对齐)。
 CSS="$KSROOT/res/kslite-icons.css"
 if [ -f "$CSS" ] && [ -x "$KSROOT/scripts/ks-topmenu.sh" ]; then
 	grep -q "ks-app-mc2" "$CSS" || \
 		echo ".ks-app-mc2 { background-image: url(\"/user/res/icon-merlinclash.png\"); }  /* MC2 */" >> "$CSS"
-	OLD=$(grep "|mc2|" "$KSROOT/topmenu.conf" 2>/dev/null | cut -d'|' -f1 | head -1)
-	URL=$(grep "|mc2|" "$KSROOT/topmenu.conf" 2>/dev/null | cut -d'|' -f3 | head -1)
-	if [ -n "$OLD" ] && [ "$OLD" != "$TITLE" ]; then
-		"$KSROOT/scripts/ks-topmenu.sh" del "$OLD" >/dev/null 2>&1
-		"$KSROOT/scripts/ks-topmenu.sh" add "$TITLE" "mc2" "$URL" "ks-app-icon ks-app-mc2" >/dev/null 2>&1
-		echo_date "菜单名:「$OLD」→「$TITLE」"
-	fi
+	OLD=$(grep -E "\|(mc2|merlinclash)\|" "$KSROOT/topmenu.conf" 2>/dev/null | cut -d'|' -f1 | head -1)
+	URL=$(grep -E "\|(mc2|merlinclash)\|" "$KSROOT/topmenu.conf" 2>/dev/null | cut -d'|' -f3 | head -1)
+	[ -n "$OLD" ] && "$KSROOT/scripts/ks-topmenu.sh" del "$OLD" >/dev/null 2>&1
+	"$KSROOT/scripts/ks-topmenu.sh" add "$TITLE" "merlinclash" "${URL:-/user8.asp}" "ks-app-icon ks-app-mc2" >/dev/null 2>&1
+	echo_date "菜单:「${OLD:-新装}」→「$TITLE」(页名 merlinclash)"
 fi
 
 echo_date "内置内核:$("$KSROOT/bin/clash" -v 2>/dev/null | head -1)"
