@@ -248,6 +248,9 @@
 	// 只刷状态条,不重绘整个表单 —— 启停轮询时用。
 	// 用 loadStatus() 会把订阅框、开关这些一起重绘,用户正在看的内容会跳。
 	function refreshStatusOnly() {
+		// ★ 2026-09-02:标签页不可见时不轮询。这一步后端要跑 mc2_status.sh + 读 199 个 dbus 键,
+		//   页面开着不看时也每 3 秒打一次纯属白烧路由器 CPU(审计实测一次 2.35s,占一颗核 78%)。
+		if (document.hidden) return Promise.resolve();
 		return post("mc2_status.sh", [])
 			.then(function () { return getJSON("/_api/merlinclash_"); })
 			.then(function (j) {
