@@ -13,6 +13,10 @@ cd "$(dirname "$0")"
 #   面板:gh release download --repo wawnnzxd/zashboard --pattern dist.zip
 [ -f merlinclash/bin64/clash ] || { echo "缺 merlinclash/bin64/clash(内核,44M,见 README)"; exit 1; }
 [ -f merlinclash/dashboard/zashboard/index.html ] || { echo "缺面板 dashboard/zashboard/(fork dist,见 patches/03)"; exit 1; }
+# iCloud 冲突副本(「文件名 2.woff2」这种)会被原样打进包:dashboard 被 .gitignore 排除,git status 看不见。
+#   1.2.2.13 包夹带 201 个、1.2.2.15 首发包夹带 150 个(约 4.5MB,2026-09-24 发现)⇒ 有就拒绝打包
+DUP=$(find merlinclash -name '* [0-9].*' | head -n 5)
+[ -z "$DUP" ] || { echo "merlinclash/ 里有 iCloud 冲突副本,先清掉再打包(与原件内容相同的挪去废纸篓即可):"; echo "$DUP"; exit 1; }
 VER="$(tr -d ' \r\n' < merlinclash/version)"
 case "$VER" in
 	*.*.*.*) : ;;
