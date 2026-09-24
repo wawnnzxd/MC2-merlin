@@ -1,5 +1,12 @@
 # 协作约定
 
+> 🟥 **2026-09-23 用户定:koolshare 线并入 AI 路由器线,本仓库从此只有一个负责方**(路由器插件项目里的「AI路由器固件接手管理」会话)。
+> koolshare 线原本服务的 GT-BE96 已退役。以下变化即日生效:
+> - **不再需要 `[AI→koolshare]` / `[koolshare→AI]` issue 流程**,共用区与原 koolshare 专属区(`install_koolshare.sh`、老版 UI、自更新链路)都由本线直接维护。
+> - 提交 trailer 统一 `Line: AI`;历史提交的 `Line: koolshare` 保留作记录。
+> - `check.sh` 的防回退断言照旧有用(防止重构时把以前的修复做没),发版前照旧跑。
+> - 下面的双线分工表与 issue 流程保留为历史,**勿再照做**。
+
 这个仓库同时被**两条线**改动,而且两边都是同一个人的 Claude 会话,
 git 里的 author 完全相同(`Claude Code <admin@beiyingma.com>`)—— **没法靠作者区分谁改的**。
 本文件是两边共用的协议,免得互相踩。

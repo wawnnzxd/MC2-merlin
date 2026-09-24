@@ -25,6 +25,14 @@ save_yaml(){
 			type=$(urldecode "$type")
 			content=$(urldecode "$content")
 			lianjie=$(urldecode "$lianjie")
+			# 2026-09-23 审计修复 mc2ui-01(A-X6):缺类型或出口的行不写。以前删规则 = 把三个键置空,
+			#   兼容层会留下空键,这里照样 echo 出一行「,,」;下次 apply 被 check_rule 拼成「,,,」插到 rules
+			#   最前面 → mihomo 解析失败 → MC2 自关,而且每次启动都复现。/_api/ 现在收到空串就删键(约定 C1),
+			#   这里再挡一层:这种行 mihomo 一定不认,写进去只会拖垮整份配置。
+			if [ -z "$type" ] || [ -z "$lianjie" ]; then
+				echo_date "自定义规则第 $acl 条缺类型或出口(删除后残留的空键?),跳过,不写进规则文件" >> $LOG_FILE
+				continue
+			fi
             echo $type,$content,$lianjie >> /koolshare/merlinclash/rule_custom/${yamlname}_custom_rule.yaml
 	    done
 	else
@@ -44,6 +52,12 @@ push_dbus(){
             fi
             #当配置文件变化，且存在自定义规则文件时，从rule_custom中的文件字典读取各值重新赋值还原
             rulecusfile="/koolshare/merlinclash/rule_custom/${yamlname}_custom_rule.yaml"
+            # 2026-09-23 审计修复 mc2ui-01(A-X6):根治已中招的机器 —— 删掉规则文件里只有空白 / 逗号的行
+            #   (以前删除规则留下的「,,」)。不删的话下面把它读回 dbus,check_rule 再拼成「,,,」插进配置。
+            if grep -q '^[[:space:],]*$' "$rulecusfile" 2>/dev/null; then
+                sed -i '/^[[:space:],]*$/d' "$rulecusfile"
+                echo_date "已清理自定义规则文件里的空行 / 只有逗号的行(删除规则留下的残留)" >> $LOG_FILE
+            fi
             lines=$(cat $rulecusfile | wc -l)
             echo_date "存在自定义规则：$lines条" >> $LOG_FILE
             if [ $lines -gt 0 ]; then

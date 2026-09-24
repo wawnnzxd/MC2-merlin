@@ -47,7 +47,16 @@
 	font-size: 12px; color: var(--text-secondary, #6b7078);
 	font-family: ui-monospace, Menlo, Consolas, monospace;
 }
-.mc2-hero__ops { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* 右侧这组(配置下拉 / 管理面板 / 重启 / 总开关 / 返回箭头)一律排成一行:组内允许折行时,浏览器按「放得下前三个」
+ *   算它的宽度,总开关和箭头被挤到第二行、左对齐在下拉框底下(2026-09-24 1920 宽实测,很乱)。
+ *   窄屏时由外层 .mc2-hero 的 flex-wrap 把整组换到状态文字下面;只有手机宽度才允许组内折行。 */
+/*   ⚠️ 光 nowrap 不够:这组本身和组内每项都默认可压缩(flex-shrink:1),1440 宽实测整组只分到 355px(明明有 700px 空位),
+ *   「管理面板」「重启」被压成竖排两行、总开关和箭头挤在一起。所以整组和每项都不许压缩、按钮文字不许折行;
+ *   真放不下时由外层 .mc2-hero 把整组换到下一行。 */
+.mc2-hero__ops { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; flex: 0 0 auto; }
+.mc2-hero__ops > * { flex-shrink: 0; }
+.mc2-hero__ops .kslite-btn { white-space: nowrap; }
+@media (max-width: 560px) { .mc2-hero__ops { flex-wrap: wrap; flex-shrink: 1; } }
 
 /* 总开关:借宿主的滑块观感,但只用 token 画,不引宿主私有 class
  * (那些 class 在不同固件版本里名字会变,引了就绑死在某一版上) */
@@ -130,7 +139,8 @@
 .mc2-row:last-child { border-bottom: none; padding-bottom: 2px; }
 .mc2-row__k { flex: 0 0 150px; font-size: 13px; }
 .mc2-row__hint { display: block; font-size: 11px; line-height: 1.4; color: var(--text-secondary, #6b7078); margin-top: 1px; }
-.mc2-row__v { flex: 1 1 260px; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+/* min-width:0 —— 默认 auto = 内容最小宽度,里面放一条不能断行的长链接(订阅框)时它就撑破整行、页面横向溢出 */
+.mc2-row__v { flex: 1 1 260px; min-width: 0; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 
 /* 开关这类「短行」用两列排。五个开关竖着堆要两百多像素,而每行右边
  * 只有一个 46px 的开关,右半屏全是空的 —— 横向的地方不用,却让人去纵向滚。
@@ -141,8 +151,14 @@
 	gap: 0 22px;
 }
 .mc2-grid .mc2-row { padding: 7px 0; }
-.mc2-grid .mc2-row__k { flex: 1 1 auto; }
-.mc2-grid .mc2-row__v { flex: 0 0 auto; }
+/* 网格里每项固定「左:标题 + 说明(说明可换行),右:控件排一行」。
+ *   原来行和控件区都允许折行:标题列按「连说明一起的最长宽度」抢位置,控件被挤到下一行;
+ *   「开关 + 下拉」被压成上下两层、密码框掉到说明下面,同一组里有的在右有的在下(2026-09-24 1440 宽实测)。
+ *   网格里的控件都是短的(开关、数字输入、几个选项的下拉、面板密码),输入框 / 下拉统一 104px。 */
+.mc2-grid .mc2-row { flex-wrap: nowrap; }
+.mc2-grid .mc2-row__k { flex: 1 1 0; min-width: 0; }
+.mc2-grid .mc2-row__v { flex: 0 0 auto; flex-wrap: nowrap; }
+.mc2-grid .mc2-row__v .mc2-input, .mc2-grid .mc2-row__v .mc2-select { flex: 0 0 auto; width: 104px; }
 
 .mc2-input, .mc2-select {
 	flex: 1 1 200px; min-width: 0;
@@ -154,7 +170,15 @@
 .mc2-input:focus, .mc2-select:focus {
 	outline: none; border-color: var(--brand-color, #ff1f2c);
 }
+/* 2026-09-23(mc2ui-05):内核没跑时规则 tab 的下拉被禁用 —— 要一眼看得出「现在不能用」 */
+.mc2-input:disabled, .mc2-select:disabled { opacity: .5; cursor: not-allowed; }
 .mc2-input--mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+/* 订阅链接框按内容撑高:固定 rows=2 时,窄屏下一条链接折成三四行,后半截被框底切掉(2026-09-24 1024 宽实测)。
+ *   Chrome 用 field-sizing,别的浏览器由 mc2.js 的 fitArea() 兜底 */
+#mcSubLinks { field-sizing: content; min-height: 3.4em; resize: vertical; }
+/*   ⚠️ field-sizing 对宽度同样生效:不钉宽度的话一条长链接不折行、把框撑到 1000px+,整页横向溢出(同日实测 287px)。
+ *   宽度按所在行铺满、可收缩,只让高度跟内容走 */
+#mcSubLinks { flex: 1 1 0; width: 100%; min-width: 0; }
 
 /* ── 订阅列表 ──────────────────────────────────────── */
 .mc2-subs { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
@@ -208,6 +232,9 @@
 	background: var(--brand-color, #ff1f2c); color: #fff; font-weight: 600;
 }
 .mc2-seg__opt:focus-visible { outline: 2px solid var(--brand-color, #ff1f2c); outline-offset: 1px; }
+/* 2026-09-23(mc2ui-23):透明代理模式的四个选项改成上游的完整叫法后变长,窄屏允许折行,
+ * 不然整排撑出卡片、横向滚动 */
+.mc2-seg--wrap { flex-wrap: wrap; }
 
 /* ── 内联编辑器:点「编辑」在卡片下方展开,不弹层 ─────────────
  * 弹层要管遮罩、层级、iframe 里的定位,还挡住上下文;
@@ -227,6 +254,9 @@
 	white-space: pre; overflow-x: auto;      /* yaml 靠缩进,禁自动换行 */
 }
 .mc2-editor__ta:focus { outline: none; border-color: var(--brand-color, #ff1f2c); }
+/* 2026-09-23(mc2ui-18):编辑器读取中只读,视觉上也要看得出还不能改
+ * (只限编辑器卡片里那个;日志 / 当前配置两个预览框本来就是 readonly,不能跟着变淡) */
+.mc2-editor .mc2-editor__ta[readonly] { opacity: .75; }
 .mc2-editor__bar {
 	display: flex; align-items: center; gap: 9px; margin-top: 8px;
 }
@@ -257,7 +287,8 @@
 	padding: 6px 8px;
 	border-bottom: 1px solid var(--wrt-segment-fill-border, rgba(128,128,128,.12));
 	vertical-align: middle;
-	overflow: hidden; text-overflow: ellipsis;    /* 长 MAC/域名截断出省略号,别撑破列 */
+	/* 长 MAC / 域名 / 以 MAC 当名字的设备:任意字符处折行显示全,不截成「…」(2026-09-24:1024 宽下 MAC 被截) */
+	overflow: hidden; overflow-wrap: anywhere;
 }
 .mc2-table tr:last-child td { border-bottom: none; }
 .mc2-table .mc2-input, .mc2-table .mc2-select {

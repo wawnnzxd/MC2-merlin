@@ -1,28 +1,80 @@
 #!/bin/sh
-# base64 —— openssl 兜底实现(原版梅林固件级缺件)
+# base64 / base64_decode / base64_encode —— openssl 兜底实现(原版梅林固件级缺件)
 #
-# koolshare 固件带 base64 二进制,原版梅林没有:busybox 没编这个 applet,
-# /bin /sbin /usr/bin 全找不到。MC2 的 clash_yamlfilechange.sh(网页编辑器保存
-# 配置片段的落盘一环)靠它解码,缺了就报「未找到 base64 解码工具」,
-# 保存静默失败 —— dbus 键写进去了、文件却纹丝不动(2026-08-25 真机踩到)。
+# koolshare 固件带 base64_encode 二进制(base64_decode 是指向它的软链,靠 argv[0] 定方向),
+# 原版梅林没有:busybox 没编 base64 applet,/bin /sbin /usr/bin 全找不到。MC2 用到三个名字:
+#   · clash_yamlfilechange.sh 的 get_base64_bin:先找 base64_decode、再找 base64,
+#     `printf "%s" "$c" | $bin -d` —— 网页编辑器保存配置片段的落盘一环,缺了就报
+#     「未找到 base64 解码工具」,保存静默失败(dbus 写了、文件不动;2026-08-25 真机踩到)。
+#   · clash_base.sh 的 decode_url_link:**只认** $KSROOT/bin/base64_decode,`echo -n "$x" | base64_decode -d`
+#     (订阅 UA/include/exclude、新建订阅链接、ACL 规则的解码)。
+#   · clash_base.sh 的 encode_url_link:**只认** $KSROOT/bin/base64_encode,`echo -n "$x" | base64_encode`
+#     (clash_saveacls.sh push 在每次 apply 时用它把自定规则写回 dbus;缺了它 ACL 键全被写成空串
+#      → 拼出 `,,` 规则 → 内核起不来 → MC2 自我关闭)。
 #
-# 本机 /usr/sbin/openssl 是有的,用它兜底。两个坑:
-#   ① openssl base64 -d 要求每行 ≤76 字符 —— dbus 里的 base64 是一整行,
-#      直接喂会解出空。先用 sed 每 64 字符切一刀再解,任意长度都稳。
-#      (不用 -A:部分 openssl 版本 -A 解长单行会静默截断,风险更大。)
-#   ② 编码方向用 -A 出单行(跟 GNU base64 -w0 一致),脚本拼 dbus 值
-#      不会被换行搅局。
+# ★ 三个名字装的是**同一份内容**(就是本文件),按调用名分派(2026-09-23 审计修复 kscore-03):
+#     base64_decode → 恒解码(MC2 传的 -d 照收)
+#     base64_encode → 恒编码
+#     base64 / 其它 → GNU 语义:带 -d/-D/--decode 解码,否则编码
+#   按名分派还多一层保险:koolshare 软件中心的 install.sh 会把 base64_decode 重建成
+#   「指向 base64_encode 的软链」,软链被调用时 $0 仍是 base64_decode,照样解码。
+#   装法:mc2-merlin/plugin/install.sh 把 bin/ 下这三个文件以 755 装到 $KSROOT/bin/
+#   (以前注释写「硬链一份 base64_decode」,但安装脚本从来没建过,base64_encode 更是一直不存在)。
 #
-# 同内容硬链一份 base64_decode(clash_yamlfilechange.sh 的 get_base64_bin
-# 第一优先找的就是这个名字,两个名字都给上)。
+# 解码的坑(2026-09-23 审计修复 kscore-04;原注释「切行后任意长度都稳」是错的):
+#   openssl 的 BIO_f_base64 在起始状态下**必须先读到一整行以 '\n' 结尾的数据**才开始解码。
+#   输入不足 64 字符、末尾又没有换行时(MC2 的调用方恰好都是 echo -n / printf "%s"),
+#   sed 一个换行都不插,openssl 读到 EOF 仍没进入解码状态 → **输出 0 字节、返回码 0**
+#   (路由器 OpenSSL 3.5.7 实测:printf 'aGVsbG8=' | openssl base64 -d 得 0 字节)。
+#   后果:编辑器里只写一两条规则时保存被静默丢弃;ACL 的 type/content、订阅 UA 这类短值全解成空。
+#   ⇒ 现在:先去掉所有空白、把 URL-safe 字符还原(- _ → + /)、按长度补齐 '=',
+#      再每 64 字符切一行、**末尾一定补换行**,然后交给 openssl。
+#   (仍然要切行:openssl 要求每行 ≤76 字符,dbus 里的 base64 是一整行;
+#    不用 -A:部分 openssl 版本 -A 解长单行会静默截断,风险更大。)
+# 编码:用 -A 出单行再补一个换行(跟 GNU base64 -w0 一致),脚本拼 dbus 值不会被换行搅局。
 
-case "$1" in
-	-d|-D|--decode)
-		sed 's/.\{64\}/&\
-/g' | /usr/sbin/openssl base64 -d
-		;;
-	*)
-		/usr/sbin/openssl base64 -A
-		printf '\n'
-		;;
+OPENSSL=/usr/sbin/openssl
+[ -x "$OPENSSL" ] || OPENSSL=openssl
+
+case "${0##*/}" in
+	base64_decode*) mode=d ;;
+	base64_encode*) mode=e ;;
+	*)              mode= ;;
 esac
+
+dflag=; file=
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-d|-D|--decode)       dflag=1 ;;
+		-w|--wrap)            [ $# -gt 1 ] && shift ;;   # 折行宽度:输出恒为单行(= -w0),忽略
+		--)                   shift; [ $# -gt 0 ] && file="$1"; break ;;
+		-)                    file= ;;
+		-?*)                  ;;                         # -w0 / -i / --wrap=N 等,忽略
+		*)                    file="$1" ;;
+	esac
+	shift
+done
+[ -z "$mode" ] && { [ -n "$dflag" ] && mode=d || mode=e; }
+if [ -n "$file" ]; then
+	exec < "$file" || exit 1
+fi
+
+if [ "$mode" = d ]; then
+	s=$(tr -d ' \t\r\n' | tr '_-' '/+')
+	case $(( ${#s} % 4 )) in
+		2) s="$s==" ;;
+		3) s="$s=" ;;
+	esac
+	# ⚠️ 用 here-doc 喂给 sed,**不能** printf "$s":本机 busybox ash 没有内建 printf/echo/test,
+	#    都是 exec 外部命令,单个参数超过 128KB(MAX_ARG_STRLEN)直接 E2BIG「Argument list too long」。
+	#    here-doc 由 ash 自己经管道写入,不走 exec,多大都行;结尾换行也由它补上。
+	sed 's/.\{64\}/&\
+/g' <<EOF | "$OPENSSL" base64 -d
+$s
+EOF
+else
+	"$OPENSSL" base64 -A
+	rc=$?
+	printf '\n'
+	exit $rc
+fi

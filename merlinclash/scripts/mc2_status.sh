@@ -27,10 +27,26 @@ else
 	"$DBUS" set merlinclash_mc2_ready=0
 fi
 
-# 透明代理是否真的接管了(iptables 链在不在)
-N=$(iptables -t nat -S 2>/dev/null | grep -c merlinclash)
-M=$(iptables -t mangle -S 2>/dev/null | grep -c merlinclash)
-"$DBUS" set merlinclash_mc2_chains=$((N + M))
+# 透明代理是否真的接管了 —— 2026-09-23 审计修复 mc2ui-22:
+#   原来 `iptables -S | grep -c merlinclash` 把 `-N merlinclash…` 这类**链定义**也数进去:
+#   防火墙重建后自定义链还在、PREROUTING 里那条跳转丢了(设备全部直连),计数照样 >0,
+#   状态条仍是绿色「运行中」,不带「(未接管流量)」。V90natguard / V99bootcheck 09-02 已改判据,这里漏了。
+#   现在按透明代理模式直接 -C 查跳转本身(形态见 clash_config.sh 的 apply_nat_rules):
+#     closed / udp :nat    PREROUTING -p tcp -j merlinclash
+#     tcp / tcpudp :mangle PREROUTING -p tcp -j merlinclash_PREROUTING
+#     udp / tcpudp :mangle PREROUTING -p udp -j merlinclash_PREROUTING
+#   开了「关闭透明代理」(closeproxy_sw=1)就一条都没有 ⇒ 0,如实显示「未接管」。
+#   键名沿用 merlinclash_mc2_chains(前端只判 >0),值改为 1 = 已接管 / 0 = 未接管。
+TAKEN=1
+MODE=$("$DBUS" get merlinclash_ipt_tproxy_type)
+case "$MODE" in
+	tcp|tcpudp) iptables -t mangle -C PREROUTING -p tcp -j merlinclash_PREROUTING 2>/dev/null || TAKEN=0 ;;
+	*)          iptables -t nat -C PREROUTING -p tcp -j merlinclash 2>/dev/null || TAKEN=0 ;;
+esac
+case "$MODE" in
+	udp|tcpudp) iptables -t mangle -C PREROUTING -p udp -j merlinclash_PREROUTING 2>/dev/null || TAKEN=0 ;;
+esac
+"$DBUS" set merlinclash_mc2_chains=$TAKEN
 
 http_response "$1"
 exit 0

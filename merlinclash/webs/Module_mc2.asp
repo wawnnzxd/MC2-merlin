@@ -13,6 +13,9 @@
 <script type="text/javascript" src="/js/jquery.js"></script>
 <script type="text/javascript" src="/state.js"></script>
 <script type="text/javascript">
+	// 「返回软件中心」箭头的兜底:在 SPA 里注入的兼容层会在 DOMContentLoaded 时把它接管成跳到软件中心;
+	//   单独打开本页排障时(不在 web wrapper 里)就回路由器首页
+	function reload_Soft_Center() { location.href = "/"; }
 	// ⚠️ 不调 show_menu()。它是 ASUS 老式框架的入口,会往 #mainMenu / #tabMenu
 	//    那套 DOM 写 innerHTML,而本页是自己画的、没有那些元素 →
 	//    TypeError: Cannot set properties of null → init 中断 →
@@ -24,6 +27,10 @@
 	function init() {
 		document.body.style.visibility = "visible";
 		reportHeight();
+		// 内容高度一变就重报:只在 init / fit() / 窗口 resize 时报,状态文字刷新、字体晚到、布局变化之后
+		//   会留下过期高度 —— 内容变矮时底下挂一截白(2026-09-24 实测 MC2 多出 24px)。
+		//   观察的是内容容器,不是 html/iframe,不会形成「上报 → iframe 变高 → 再上报」的正反馈
+		if (window.ResizeObserver) new ResizeObserver(reportHeight).observe(document.querySelector(".kslite") || document.body);
 	}
 	// ⚠️ 只量 body,**绝不能碰 documentElement.scrollHeight** —— html 撑满 iframe,
 	//    那个值恒等于 iframe 当前高度,拿它上报就是正反馈:上报 H → iframe 变 H →
@@ -60,6 +67,7 @@
 				<button type="button" class="kslite-btn kslite-btn--ghost" id="mcRestart" disabled>重启</button>
 				<button type="button" class="mc2-toggle" id="mcToggle" disabled
 				        aria-label="总开关"></button>
+				<img class="ks-back" style="margin:0" src="/images/backprev.png" alt="返回" title="返回软件中心" onclick="reload_Soft_Center();" onmouseover="this.src='/images/backprevclick.png'" onmouseout="this.src='/images/backprev.png'">
 			</div>
 		</div>
 
@@ -91,12 +99,18 @@
 	<div class="mc2-panel is-active" data-panel="sub">
 		<div class="kslite-card">
 			<div class="kslite-card__hd">订阅地址</div>
+			<!-- 2026-09-23 审计修复 mc2ui-09:如实说明各字段谁用。上游 update 分支(「更新当前配置」)只按
+			     yaml_bak/<配置>.dlinks 里记录的地址重新拉取,不读这里的链接 / 开关 / 周期;这些只在「订阅」
+			     新配置时写进 .dlinks(旧版 Magic Catling 页面的「订阅」按钮)。 -->
 			<p class="kslite-hint">
-				更新后会重新生成配置文件,需要重启内核才生效。
+				「更新当前配置」按当前配置自己记录的原地址(<code>yaml_bak/&lt;配置&gt;.dlinks</code>)重新拉取;
+				开着总开关时,更新成功后会<strong>自动重启内核</strong>。<br>
+				下面的链接、自动更新周期和「节点处理」只在<strong>订阅新配置</strong>时使用(旧版 Magic Catling 页面的「订阅」按钮),
+				改这里不影响已有配置的地址和定时更新。
 			</p>
 			<div class="mc2-row">
 				<div class="mc2-row__k">订阅链接
-					<span class="mc2-row__hint">一行一条,可合并多个</span>
+					<span class="mc2-row__hint">一行一条(保存时按「|」合并,和旧版一致)</span>
 				</div>
 				<div class="mc2-row__v">
 					<textarea class="mc2-input mc2-input--mono" id="mcSubLinks" rows="2"
@@ -110,8 +124,9 @@
 					     cron 间隔用(实测 dbus 里存的是 259200 = 3 天)。填 0/1/2/3
 					     会被当成「0～3 秒」,订阅每秒都在重拉。 -->
 					<select class="mc2-select" id="mcSubCycle" style="flex:0 1 160px">
+						<!-- 2026-09-23 审计修复 mc2ui-09:去掉 43200(每 12 小时)—— clash_config.sh 的
+						     write_update_yaml_cron 只认 86400 / 259200 / 604800,其它值落到「未开启定时订阅」。 -->
 						<option value="0">不自动更新</option>
-						<option value="43200">每 12 小时</option>
 						<option value="86400">每天</option>
 						<option value="259200">每 3 天</option>
 						<option value="604800">每周</option>
@@ -119,25 +134,19 @@
 				</div>
 			</div>
 			<div style="display:flex;gap:9px;margin-top:14px;flex-wrap:wrap">
-				<button type="button" class="kslite-btn" id="mcSubUpdate">立即更新订阅</button>
+				<button type="button" class="kslite-btn" id="mcSubUpdate">更新当前配置</button>
 				<button type="button" class="kslite-btn kslite-btn--ghost" id="mcSubSave">保存设置</button>
 			</div>
 		</div>
 
 		<div class="kslite-card">
 			<div class="kslite-card__hd">节点处理</div>
+			<!-- 2026-09-23 审计修复 mc2ui-13:删掉「节点重命名」假开关 —— 它绑的 merlinclash_sub_rename
+			     在上游是订阅生成的配置文件名(Online → AP_Online),不是开关,上游也没有这个功能。 -->
 			<p class="kslite-hint">
-				订阅转换时对节点做的处理,改完要点「立即更新订阅」才应用。
+				订阅转换时对节点做的处理,只在「订阅」新的节点订阅(非 AP 规则)时应用。
 			</p>
 			<div class="mc2-grid">
-				<div class="mc2-row">
-					<div class="mc2-row__k">节点重命名
-						<span class="mc2-row__hint">按地区归类并统一命名</span>
-					</div>
-					<div class="mc2-row__v">
-						<button type="button" class="mc2-toggle" id="mcSubRename" aria-label="节点重命名"></button>
-					</div>
-				</div>
 				<div class="mc2-row">
 					<div class="mc2-row__k">地区旗帜
 						<span class="mc2-row__hint">节点名前加国旗 emoji</span>
@@ -177,7 +186,7 @@
 			<div class="kslite-card__hd">本地上传</div>
 			<div class="kslite-drop" id="mcDrop">
 				<div class="kslite-drop__title">把配置文件拖到这里</div>
-				<div class="kslite-drop__sub">已有现成 .yaml 时用这个,不走订阅转换</div>
+				<div class="kslite-drop__sub">已有现成 .yaml 时用这个,不走订阅转换;文件名只能是字母、数字、下划线、横杠</div>
 				<button type="button" class="kslite-btn" id="mcPick">选择文件</button>
 				<input type="file" class="kslite-file" id="mcFile" accept=".yaml,.yml" />
 			</div>
@@ -284,6 +293,7 @@
 			<div class="kslite-card__hd">自定 Clash 规则</div>
 			<p class="kslite-hint">
 				插到订阅规则<strong>前面</strong>、优先匹配。简易模式用下面的表格,专业模式直接写 Clash rules 语法。
+				出口下拉包含 select / fallback / url-test 各类代理组;内核没在运行时拿不到列表,不能添加。
 			</p>
 			<div class="mc2-row">
 				<div class="mc2-row__k">规则模式</div>
@@ -328,10 +338,12 @@
 			<div class="mc2-row">
 				<div class="mc2-row__k">匹配方法</div>
 				<div class="mc2-row__v">
+					<!-- 2026-09-23 审计修复 mc2ui-08:取值 1/2/3,与后端 get_method_name、上游旧页面、
+					     defaults.conf 一致(以前写成 0/1/2,整体错一位,「仅 MAC」永远选不到)。 -->
 					<div class="mc2-seg" id="mcNokMethod">
-						<button type="button" class="mc2-seg__opt" data-val="0">IP + MAC</button>
-						<button type="button" class="mc2-seg__opt" data-val="1">仅 IP</button>
-						<button type="button" class="mc2-seg__opt" data-val="2">仅 MAC</button>
+						<button type="button" class="mc2-seg__opt" data-val="1">IP + MAC</button>
+						<button type="button" class="mc2-seg__opt" data-val="2">仅 IP</button>
+						<button type="button" class="mc2-seg__opt" data-val="3">仅 MAC</button>
 					</div>
 				</div>
 			</div>
@@ -345,8 +357,8 @@
 					<tbody>
 						<tr>
 							<td><input class="mc2-input" id="mcNokName" placeholder="电视" /></td>
-							<td><input class="mc2-input mc2-table__mono" id="mcNokIp" placeholder="192.168.50.20" /></td>
-							<td><input class="mc2-input mc2-table__mono" id="mcNokMac" placeholder="可留空" /></td>
+							<td><input class="mc2-input mc2-table__mono" id="mcNokIp" maxlength="18" placeholder="192.168.50.20" /></td>
+							<td><input class="mc2-input mc2-table__mono" id="mcNokMac" maxlength="17" placeholder="可留空" /></td>
 							<td>
 								<select class="mc2-select" id="mcNokPort">
 									<option value="all">全部端口</option>
@@ -378,12 +390,8 @@
 					</div>
 					<div class="mc2-row__v"><button type="button" class="mc2-toggle" id="mcAdvWatchdog" disabled aria-label="实时进程守护"></button></div>
 				</div>
-				<div class="mc2-row">
-					<div class="mc2-row__k">队列请求
-						<span class="mc2-row__hint">页面操作排队发,弱路由防拥塞</span>
-					</div>
-					<div class="mc2-row__v"><button type="button" class="mc2-toggle" id="mcAdvQueue" aria-label="队列请求"></button></div>
-				</div>
+				<!-- 2026-09-23 审计修复 mc2ui-31:「队列请求」(queue_sw)只影响旧版页面自己的请求排队,
+				     新界面不排队,拿掉;dbus 键保持原值。 -->
 				<div class="mc2-row">
 					<div class="mc2-row__k">开机自启推迟
 						<span class="mc2-row__hint">等网络就绪再启动,秒</span>
@@ -393,13 +401,13 @@
 						<input class="mc2-input mc2-table__mono" id="mcAdvDelayVal" style="flex:0 1 76px" />
 					</div>
 				</div>
+				<!-- 2026-09-23 审计修复 mc2ui-31:开关 logcheck_sw 上游脚本根本不读,拿掉;只留次数。 -->
 				<div class="mc2-row">
-					<div class="mc2-row__k">启动日志重试
-						<span class="mc2-row__hint">检查内核起没起来的重试次数</span>
+					<div class="mc2-row__k">启动检查次数
+						<span class="mc2-row__hint">每次 0.3 秒;20~999 的整数,其它按 40</span>
 					</div>
 					<div class="mc2-row__v">
-						<button type="button" class="mc2-toggle" id="mcAdvLogSw" aria-label="启动日志重试"></button>
-						<input class="mc2-input mc2-table__mono" id="mcAdvLogVal" style="flex:0 1 76px" />
+						<input class="mc2-input mc2-table__mono" id="mcAdvLogVal" inputmode="numeric" maxlength="3" style="flex:0 1 76px" />
 					</div>
 				</div>
 			</div>
@@ -445,9 +453,13 @@
 					</div>
 				</div>
 				<div class="mc2-row">
-					<div class="mc2-row__k">管理面板密码</div>
+					<!-- 2026-09-23 审计修复 mc2ui-38:补回上游的字母数字限制;改了要同步外部调用方。
+					     (I-X2)netlog 采集器读容器环境变量 MIHOMO_SECRET,不会自己跟着变;没同步 → NetWatch「采集停摆」401 告警卡。 -->
+					<div class="mc2-row__k">管理面板密码
+						<span class="mc2-row__hint">仅字母数字;改了要同步 aiboard netlog 容器的 MIHOMO_SECRET(重建 netlog 容器时加 -e MIHOMO_SECRET=…)</span>
+					</div>
 					<div class="mc2-row__v">
-						<input class="mc2-input mc2-table__mono" id="mcAdvDashPw" style="flex:0 1 160px" />
+						<input class="mc2-input mc2-table__mono" id="mcAdvDashPw" maxlength="32" pattern="[A-Za-z0-9]+" style="flex:0 1 160px" />
 					</div>
 				</div>
 			</div>
@@ -456,15 +468,20 @@
 		<div class="kslite-card">
 			<div class="kslite-card__hd">代理方式</div>
 			<div class="mc2-row">
+				<!-- 2026-09-23 审计修复 mc2ui-23:标签按上游的真实含义写(只改文案,data-val 不动)。
+				     closed = Redir TCP(照样代理 TCP,只是不代理 UDP)、udp = Redir TCP + TPROXY UDP(默认)。
+				     以前标成「关闭 / 仅 TCP / 仅 UDP / TCP + UDP」,和下面的「关闭透明代理」开关还撞名。
+				     2026-09-23 审计修复 mc2ui-10 改动 3(跨包 E-X5):closed 注明「无 UDP」、udp 标「推荐」,
+				     免得有人以为 TProxy TCP+UDP 才是「最完整」的而去选它。V90natguard 现已认全四种模式。 -->
 				<div class="mc2-row__k">透明代理模式
-					<span class="mc2-row__hint">UDP 走 TPROXY;与 AiProtection 网络神盾冲突</span>
+					<span class="mc2-row__hint">前两项只代理 TCP;后两项 TCP、UDP 都代理。含 TPROXY 的与网络神盾冲突;停止接管流量用下面的「关闭透明代理」</span>
 				</div>
 				<div class="mc2-row__v">
-					<div class="mc2-seg" id="mcAdvTproxy">
-						<button type="button" class="mc2-seg__opt" data-val="closed">关闭</button>
-						<button type="button" class="mc2-seg__opt" data-val="tcp">仅 TCP</button>
-						<button type="button" class="mc2-seg__opt" data-val="udp">仅 UDP</button>
-						<button type="button" class="mc2-seg__opt" data-val="tcpudp">TCP + UDP</button>
+					<div class="mc2-seg mc2-seg--wrap" id="mcAdvTproxy">
+						<button type="button" class="mc2-seg__opt" data-val="closed" title="nat 表 REDIRECT 代理 TCP,UDP 不代理">Redir TCP(无 UDP)</button>
+						<button type="button" class="mc2-seg__opt" data-val="tcp" title="mangle 表 TPROXY 代理 TCP,UDP 不代理">TProxy TCP</button>
+						<button type="button" class="mc2-seg__opt" data-val="udp" title="TCP 走 REDIRECT,UDP 走 TPROXY(默认,推荐)">Redir TCP + TProxy UDP(推荐)</button>
+						<button type="button" class="mc2-seg__opt" data-val="tcpudp" title="TCP、UDP 都走 TPROXY">TProxy TCP+UDP</button>
 					</div>
 				</div>
 			</div>
@@ -537,7 +554,7 @@
 			</div>
 			<div class="mc2-row">
 				<div class="mc2-row__k">大陆 IP 白名单
-					<span class="mc2-row__hint">chnroute,「大陆 IP 不经过内核」用它</span>
+					<span class="mc2-row__hint">chnroute,「大陆 IP 不经过内核」用它;N98chnupdate 维护(APNIC∪17mon,每周日 04:30 自动更新)</span>
 				</div>
 				<div class="mc2-row__v">
 					<button type="button" class="kslite-btn kslite-btn--ghost" id="mcChnUpdate">更新</button>
@@ -551,8 +568,10 @@
 
 		<div class="kslite-card">
 			<div class="kslite-card__hd">备份与恢复</div>
+			<!-- 2026-09-23 审计修复 mc2ui-15:勾选同时决定打包什么、恢复什么(上游语义),并从 dbus 回显。 -->
 			<p class="kslite-hint">
-				勾选要打包的内容,下载成 <code>mc_backup.tar.gz</code>;恢复后需重启内核。
+				勾选的项目同时决定「下载备份」打包什么、「恢复备份」导入什么。
+				恢复会先停止 Magic Catling,完成后自动恢复原来的运行状态。
 			</p>
 			<div class="mc2-grid" id="mcBakBoxes">
 				<div class="mc2-row"><div class="mc2-row__k">插件设置</div><div class="mc2-row__v"><button type="button" class="mc2-toggle is-on" data-bak="merlinclash_bak_set" aria-label="插件设置"></button></div></div>
@@ -585,8 +604,16 @@
 						<option value="4">每月</option>
 					</select>
 					<span id="mcRstFields" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">
-						<input class="mc2-input mc2-table__mono" id="mcRstEvery" style="flex:0 1 64px" title="间隔分钟" />
-						<span class="mc2-row__hint" id="mcRstEveryU">分钟</span>
+						<!-- 2026-09-23 审计修复 mc2ui-14:只能选上游认的 11 个值(2~30 按分钟,1/3/6/12 按小时);
+						     以前是自由输入框、单位写死「分钟」,填别的值旧任务被删、新任务不建。 -->
+						<select class="mc2-select" id="mcRstEvery" style="flex:0 1 150px" title="间隔">
+							<option value="2">每 2 分钟</option><option value="5">每 5 分钟</option>
+							<option value="10">每 10 分钟</option><option value="15">每 15 分钟</option>
+							<option value="20">每 20 分钟</option><option value="25">每 25 分钟</option>
+							<option value="30">每 30 分钟</option><option value="1">每 1 小时</option>
+							<option value="3">每 3 小时</option><option value="6">每 6 小时</option>
+							<option value="12">每 12 小时</option>
+						</select>
 						<select class="mc2-select" id="mcRstDay" style="flex:0 1 76px" title="几号"></select>
 						<select class="mc2-select" id="mcRstWeek" style="flex:0 1 88px" title="周几">
 							<option value="0">周日</option><option value="1">周一</option><option value="2">周二</option>

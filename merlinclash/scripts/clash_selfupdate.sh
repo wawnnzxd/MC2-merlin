@@ -173,7 +173,11 @@ install)
 		fi
 		echo_date "解包完成($(du -sk /tmp/merlinclash | cut -f1)KB),开始安装..." >> $LOG
 		set_status "installing:$LATEST"
-		sh /tmp/merlinclash/install.sh >> $LOG 2>&1
+		# 2026-09-23 审计修复(F2-X9):显式告诉安装脚本「是自更新调的」—— 梅林分支(install_merlin.sh)
+		#   认这个变量,装完不再自己后台重启 MC2(下面恢复开关 + restart 由本脚本做,免得两轮 apply_mc 并发)。
+		#   不带时它退回看 /tmp/mc_selfupdate.lock(<900 秒)+ status=installing:*,结果一样,只是更依赖锁的细节。
+		#   koolshare 分支不认这个变量,无影响。
+		MC2_SELFUPDATE=1 sh /tmp/merlinclash/install.sh >> $LOG 2>&1
 		rc=$?
 		NOW="$(sane "$(cur_ver)")"
 		if [ "$rc" = "0" ] && [ "$NOW" = "$LATEST" ]; then

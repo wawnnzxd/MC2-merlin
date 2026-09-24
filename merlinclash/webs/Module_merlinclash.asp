@@ -1277,13 +1277,17 @@
 		addOptions(["#merlinclash_select_hour", "#merlinclash_select_clash_restart_hour"], hourOptions);
 
 		// 分钟选项
+		// 2026-09-23 审计修复(K-X3):原来给到 60 分 —— cron 分钟只有 0~59,busybox crond 遇到 60 会把
+		//   整个分钟字段置满,「每天 H 时 60 分重启」= H 点那一小时里每分钟重启一次。后端也已收口成 0。
 		var minuteOptions = [];
-		for (var i = 0; i < 61; i++) {
+		for (var i = 0; i < 60; i++) {
 			minuteOptions.push({value: i, text: i + "分"});
 		}
 		addOptions(["#merlinclash_select_minute", "#merlinclash_select_clash_restart_minute"], minuteOptions);
 
 		// 星期选项
+		// (「日」的值 7 保留不改 —— dbus 里已存的 7 要能回显;cron 的周日是 0,
+		//   2026-09-23 起由 clash_restart_regularly.sh / clash_config.sh 在注册 cron 时把 7 换成 0。)
 		var weekOptions = [["1", "一"], ["2", "二"], ["3", "三"], ["4", "四"], ["5", "五"], ["6", "六"], ["7", "日"]].map(item => ({value: item[0], text: item[1]}));
 		addOptions(["#merlinclash_select_week", "#merlinclash_select_clash_restart_week"], weekOptions);
 

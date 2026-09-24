@@ -339,6 +339,13 @@ check_rule() {
 				type=$(urldecode "$type")
 				content=$(urldecode "$content")
 				lianjie=$(urldecode "$lianjie")
+				# 2026-09-23 审计修复 mc2ui-01(A-X6):缺类型或出口的规则 mihomo 一定解析失败 ——
+				#   整份配置 Parse config error → 内核起不来 → MC2 自关,每次启动都复现(典型是删规则
+				#   留下的「,,」行被拼成「,,,」)。跳过并记日志,别让一条坏规则拖垮全部。
+				if [ -z "$type" ] || [ -z "$lianjie" ]; then
+					echo_date "【警告】第 $acl 条自定规则缺类型或出口,跳过(内容:$type,$content,$lianjie)" >> $LOG_FILE
+					continue
+				fi
 				#写入自定规则到当前配置文件
 				num1=$(($num+1))
 				echo_date "写入第 $num1 条自定规则到当前配置文件" >> $LOG_FILE
@@ -1930,6 +1937,10 @@ write_clash_restart_cron_job(){
 	mscrw=${merlinclash_select_clash_restart_week}
 	mscrd=${merlinclash_select_clash_restart_day}
 	mscrm_2=${merlinclash_select_clash_restart_minute_2}
+	# 2026-09-23 审计修复(K-X3):busybox crond 对越界值是把整个字段置满(不是跳过)——
+	#   旧界面「周日」=7 会变成每天重启,分钟 60 会变成那个小时里每分钟重启。与 clash_restart_regularly.sh 同样收口。
+	[ "$mscrw" = "7" ] && mscrw=0
+	case "$mscrm" in [0-9]|[1-5][0-9]) ;; *) mscrm=0 ;; esac
 	remove_clash_restart_regularly(){
 		if [ -n "$(cru l|grep clash_restart)" ]; then		
 			sed -i '/clash_restart/d' /var/spool/cron/crontabs/* >/dev/null 2>&1
@@ -1956,6 +1967,8 @@ write_clash_restart_cron_job(){
 		if [ "$mscrm_2" == "2" ] || [ "$mscrm_2" == "5" ] || [ "$mscrm_2" == "10" ] || [ "$mscrm_2" == "15" ] || [ "$mscrm_2" == "20" ] || [ "$mscrm_2" == "25" ] || [ "$mscrm_2" == "30" ]; then
 			cru a clash_restart "*/"${mscrm_2}" * * * * /bin/sh /koolshare/scripts/clash_restart_update.sh"
 			echo_date "Clash将每隔${mscrm_2}分钟重启" >> $LOG_FILE
+			# 2026-09-23 审计(K-X3):*/25 按整点对齐,不是等间隔
+			[ "$mscrm_2" = "25" ] && echo_date "(cron 按整点对齐:实际是每小时的 :00/:25/:50,间隔 25/25/10 分钟)" >> $LOG_FILE
 		fi
 		if [ "$mscrm_2" == "1" ] || [ "$mscrm_2" == "3" ] || [ "$mscrm_2" == "6" ] || [ "$mscrm_2" == "12" ]; then
 			cru a clash_restart "0 */"${mscrm_2} "* * * /bin/sh /koolshare/scripts/clash_restart_update.sh"
